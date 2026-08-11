@@ -447,13 +447,21 @@
     }).join('');
   }
 
+  // Status of a transport month, relative to today. A month whose 1st has not
+  // arrived yet is "To be paid" (upcoming), not "Due" (overdue).
+  function transportMonthStatus(m) {
+    if (m.total <= 0) return { txt: '—', cls: 'gray' };
+    if (m.balance <= 0) return { txt: 'Paid', cls: 'green' };
+    if (m.paid > 0) return { txt: 'Partial', cls: 'amber' };
+    const started = (m.key + '-01') <= U.todayISO();
+    return started ? { txt: 'Due', cls: 'red' } : { txt: 'To be paid', cls: 'blue' };
+  }
   // Monthly transport panel (Apr→Mar). Hidden when the student has no transport.
   function transportMonthlyPanel(s) {
     const tb = Store.transportBreakdown(s);
     if (!tb.some(m => m.total > 0 || m.paid > 0)) return '';
     const tot = tb.reduce((a, m) => a + m.total, 0), paid = tb.reduce((a, m) => a + m.paid, 0), bal = tot - paid;
-    const monthStatus = m => m.total <= 0 ? '<span class="badge gray">—</span>'
-      : (m.balance <= 0 ? '<span class="badge green">Paid</span>' : (m.paid > 0 ? '<span class="badge amber">Partial</span>' : '<span class="badge red">Due</span>'));
+    const monthStatus = m => { const st = transportMonthStatus(m); return `<span class="badge ${st.cls}">${st.txt}</span>`; };
     const rows = tb.map(m => `<tr>
       <td><b>${U.esc(m.label)}</b></td>
       <td class="num">${U.inr(m.total)}</td>
@@ -483,7 +491,7 @@
       <td class="num">${U.inr(m.total)}</td>
       <td class="num">${U.inr(m.paid)}</td>
       <td class="num due">${U.inr(m.balance)}</td>
-      <td class="c">${m.total <= 0 ? '—' : (m.balance <= 0 ? 'PAID' : (m.paid > 0 ? 'PARTIAL' : 'DUE'))}</td></tr>`).join('');
+      <td class="c">${transportMonthStatus(m).txt.toUpperCase()}</td></tr>`).join('');
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Transport Card — ${U.esc(s.name)}</title>
       <style>
         *{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#1e293b;margin:22px}
@@ -854,8 +862,9 @@
         // monthly transport — one selectable row per month (Apr → Mar)
         const tb = Store.transportBreakdown(s);
         const monthRows = tb.map(m => {
-          const due = m.balance > 0;
-          const status = m.total > 0 ? `paid ${U.inr(m.paid)}/${U.inr(m.total)}` : 'not set — tick to add';
+          const started = (m.key + '-01') <= U.todayISO();
+          const due = m.balance > 0 && started;               // don't pre-tick future months
+          const status = m.total > 0 ? `paid ${U.inr(m.paid)}/${U.inr(m.total)}${!started ? ' · upcoming' : ''}` : 'not set — tick to add';
           return feeRowHtml({ key: 'transport::' + m.key, head: 'transport', month: m.key, label: 'Transport — ' + m.label, sub: B.name + ' · ' + status, balance: m.balance, due });
         }).join('');
         return `<div class="fee-group"><div class="fee-group-hd">🚌 Transport Fees — Monthly <span class="muted">(tick the month(s) to collect)</span></div>${monthRows}</div>`;
