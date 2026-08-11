@@ -61,8 +61,8 @@
   };
   const BUSINESS_ORDER = ['school', 'co', 'falcon', 'sports'];
   // School WhatsApp / contact number (shown on receipts & in reminders)
-  const SCHOOL_WHATSAPP = '+919003950980';
-  const SCHOOL_WHATSAPP_DISPLAY = '+91 90039 50980';
+  const SCHOOL_WHATSAPP = '+917200263979';
+  const SCHOOL_WHATSAPP_DISPLAY = '+91 72002 63979';
 
   // ---- Report card config (attendance + marks) ----
   const ASSESSMENTS = [
