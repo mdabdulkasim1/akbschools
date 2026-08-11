@@ -2709,7 +2709,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
             <select id="bizSort"><option value="balance"${bizState.sort === 'balance' ? ' selected' : ''}>Sort: Pending ↓</option><option value="name"${bizState.sort === 'name' ? ' selected' : ''}>Sort: Name</option><option value="grade"${bizState.sort === 'grade' ? ' selected' : ''}>Sort: Grade</option></select>
           </div></div>
         <div class="table-scroll"><table>
-          <thead><tr><th>Student</th><th>Grade</th><th>Contact</th>${heads.map(k => `<th class="t-right">${U.esc(Store.HEAD_LABELS[k])}</th>`).join('')}<th class="t-right">Pending</th><th></th></tr></thead>
+          <thead><tr><th>Student</th><th>Grade</th><th>Contact</th>${heads.map(k => `<th class="t-right">${U.esc(Store.HEAD_LABELS[k])}</th>`).join('')}<th class="t-right">Paid</th><th class="t-right">Pending</th><th></th></tr></thead>
           <tbody id="bizBody"></tbody></table></div>
         <div class="panel-body pad" id="bizFoot"></div>
       </div>
@@ -2738,9 +2738,10 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
         <td><b>${U.esc(r.s.name)}</b><div class="muted" style="font-size:11px">ID ${U.esc(r.s.id)} · ${U.esc(r.s.father || '')}</div></td>
         <td>${U.esc(r.s.grade || '')}</td><td class="mono">${U.esc(r.s.contact || '')}</td>
         ${heads.map(k => { const b = pendingHeadBal(r.s, k); return `<td class="num" style="color:${b > 0 ? 'var(--red)' : 'var(--muted)'}">${U.inr(b)}</td>`; }).join('')}
+        <td class="num" style="color:var(--green)">${U.inr(bizPaid(r.s))}</td>
         <td class="num" style="color:var(--red);font-weight:700">${U.inr(r.bal)}</td>
         <td class="t-right">${remindIcon(r.s)}<button class="btn green sm" data-pay="${U.esc(r.s.id)}">Collect</button></td></tr>`).join('')
-        || `<tr><td colspan="${4 + heads.length}" class="empty">No students pending for ${U.esc(B.name)} 🎉</td></tr>`;
+        || `<tr><td colspan="${5 + heads.length}" class="empty">No students pending for ${U.esc(B.name)} 🎉</td></tr>`;
       const sum = rows.reduce((a, r) => a + r.bal, 0);
       $('#bizFoot').innerHTML = `<b>${rows.length}</b> pending students · Outstanding <b style="color:var(--red)">${U.inr(sum)}</b>`;
       $$('#bizBody [data-id]').forEach(tr => tr.onclick = e => { if (e.target.dataset.pay) return; location.hash = '#/student/' + encodeURIComponent(tr.dataset.id); });
@@ -2752,15 +2753,15 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     $('#bizSort').onchange = e => { bizState.sort = e.target.value; draw(); };
     $('#bizExp').onclick = () => {
       const rows = filtered();
-      const out = [['Student ID', 'Name', 'Grade', 'Father', 'Contact'].concat(heads.map(k => Store.HEAD_LABELS[k] + ' Pending')).concat(['Total Pending'])];
-      rows.forEach(r => out.push([r.s.id, r.s.name, r.s.grade, r.s.father, r.s.contact].concat(heads.map(k => pendingHeadBal(r.s, k))).concat([r.bal])));
+      const out = [['Student ID', 'Name', 'Grade', 'Father', 'Contact'].concat(heads.map(k => Store.HEAD_LABELS[k] + ' Pending')).concat(['Paid', 'Total Pending'])];
+      rows.forEach(r => out.push([r.s.id, r.s.name, r.s.grade, r.s.father, r.s.contact].concat(heads.map(k => pendingHeadBal(r.s, k))).concat([bizPaid(r.s), r.bal])));
       U.download('akb_' + key + '_pending.csv', U.toCSV(out), 'text/csv'); U.toast('Exported ' + rows.length + ' rows', 'success');
     };
     $('#bizPrint').onclick = () => {
       const rows = filtered();
       const filterNote = [groupLabel ? groupLabel.replace(/^\s*—\s*/, '') : '', bizState.grade ? 'Class: ' + bizState.grade : '', bizState.head ? Store.HEAD_LABELS[bizState.head] : '', bizState.q ? 'Search: "' + bizState.q + '"' : '']
         .filter(Boolean).join(' · ');
-      printPendingList(B, heads, rows, pendingHeadBal, filterNote);
+      printPendingList(B, heads, rows, pendingHeadBal, filterNote, bizPaid);
     };
     draw();
     bindNav();
@@ -2778,19 +2779,22 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
   }
 
   // Printable list of pending students for a firm/business (respects current filters)
-  function printPendingList(B, heads, rows, pendingHeadBal, filterNote) {
+  function printPendingList(B, heads, rows, pendingHeadBal, filterNote, paidOf) {
+    paidOf = paidOf || (s => heads.reduce((a, k) => a + ((s.fees[k] || {}).paid || 0), 0));
     const school = (Store.meta && Store.meta.school) || 'AKB School of Excellence';
     const dt = U.fmtDate(U.todayISO());
     const grand = rows.reduce((a, r) => a + r.bal, 0);
+    const paidSum = rows.reduce((a, r) => a + paidOf(r.s), 0);
     const base = location.origin + location.pathname.replace(/[^/]*$/, '');
     const headTh = heads.length > 1 ? heads.map(k => `<th class="num">${U.esc(Store.HEAD_LABELS[k])}</th>`).join('') : '';
-    const colSpan = 4 + (heads.length > 1 ? heads.length : 0) + 1;
+    const colSpan = 4 + (heads.length > 1 ? heads.length : 0) + 2;
     const body = rows.map((r, i) => `<tr>
       <td class="c">${i + 1}</td>
       <td><b>${U.esc(r.s.name)}</b><div class="sub">ID ${U.esc(r.s.id)}${r.s.father ? ' · ' + U.esc(r.s.father) : ''}</div></td>
       <td class="c">${U.esc(r.s.grade || '')}</td>
       <td>${U.esc(r.s.contact || '')}</td>
       ${heads.length > 1 ? heads.map(k => { const b = pendingHeadBal(r.s, k); return `<td class="num">${b > 0 ? U.inr(b) : '—'}</td>`; }).join('') : ''}
+      <td class="num">${U.inr(paidOf(r.s))}</td>
       <td class="num due">${U.inr(r.bal)}</td></tr>`).join('')
       || `<tr><td colspan="${colSpan}" style="text-align:center;padding:24px">No pending students 🎉</td></tr>`;
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Pending — ${U.esc(B.name)}</title>
@@ -2819,9 +2823,9 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       <div class="meta"><span><b>${U.esc(school)}</b> · Academic Year ${U.esc(Store.meta.year || '')}${filterNote ? ' · ' + U.esc(filterNote) : ''}</span>
         <span>Date: <b>${dt}</b> · <b>${rows.length}</b> pending student(s)</span></div>
       <table>
-        <thead><tr><th class="c">#</th><th>Student</th><th class="c">Class</th><th>Parent Mobile</th>${headTh}<th class="num">Pending</th></tr></thead>
+        <thead><tr><th class="c">#</th><th>Student</th><th class="c">Class</th><th>Parent Mobile</th>${headTh}<th class="num">Paid</th><th class="num">Pending</th></tr></thead>
         <tbody>${body}</tbody>
-        <tfoot><tr><td colspan="${colSpan - 1}">TOTAL OUTSTANDING (${rows.length} student${rows.length === 1 ? '' : 's'})</td><td class="num due">${U.inr(grand)}</td></tr></tfoot>
+        <tfoot><tr><td colspan="${colSpan - 2}">TOTAL (${rows.length} student${rows.length === 1 ? '' : 's'})</td><td class="num">${U.inr(paidSum)}</td><td class="num due">${U.inr(grand)}</td></tr></tfoot>
       </table>
       <div class="foot"><span>Generated by AKB School Management</span><span>Signature: ____________________</span></div>
       <div class="noprint" style="margin-top:20px"><button onclick="window.print()">🖨️ Print</button></div>
