@@ -140,6 +140,9 @@ tbody tr.clickable{cursor:pointer}
 .fee-group-hd{font-weight:700;font-size:13px;color:#c2410c;padding:6px 0}
 .fee-group .fee-row{border-bottom:1px solid #fde8d3}
 .fee-group .fee-row:last-child{border-bottom:none}
+/* brief highlight when jumping to a panel */
+@keyframes panelFlash{0%{box-shadow:0 0 0 0 rgba(29,78,216,.45)}100%{box-shadow:0 0 0 6px rgba(29,78,216,0)}}
+.panel.flash{animation:panelFlash 1.2s ease-out;border-color:var(--primary)}
 
 /* Student detail */
 .detail-grid{display:grid;grid-template-columns:320px 1fr;gap:20px}
@@ -2651,8 +2654,8 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       <div class="cards">
         ${kpi('Billed', U.inr(total), { accent: 'blue' })}
         ${kpi('Collected', U.inr(paid), { accent: 'green', sub: (total ? Math.round(paid / total * 100) : 0) + '% collected' })}
-        ${kpi('Outstanding', U.inr(outstanding), { accent: 'red' })}
-        ${kpi('Pending Students', pendingCount, { accent: 'amber' })}
+        <div class="card accent-red link" id="outstandingKpi"><div class="k">Outstanding</div><div class="v">${U.inr(outstanding)}</div><div class="sub">click for pending students</div></div>
+        <div class="card accent-amber link" id="pendingKpi"><div class="k">Pending Students</div><div class="v">${pendingCount}</div><div class="sub">click to view the list ↓</div></div>
       </div>
 
       <div class="panel"><div class="panel-head"><h2>Fee Heads — ${U.esc(B.name)}</h2></div>
@@ -2660,7 +2663,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
         <tbody>${headAgg.map(h => `<tr><td><b>${U.esc(h.label)}</b></td><td class="num">${U.inr(h.t)}</td><td class="num" style="color:var(--green)">${U.inr(h.p)}</td><td class="num" style="color:${h.bal > 0 ? 'var(--red)' : 'var(--muted)'}">${U.inr(h.bal)}</td></tr>`).join('')}</tbody>
         <tfoot><tr style="font-weight:700;background:#f8fafc"><td>TOTAL</td><td class="num">${U.inr(total)}</td><td class="num" style="color:var(--green)">${U.inr(paid)}</td><td class="num" style="color:var(--red)">${U.inr(outstanding)}</td></tr></tfoot></table></div></div>
 
-      <div class="panel">
+      <div class="panel" id="pendingPanel">
         <div class="panel-head"><h2>Students with Pending ${U.esc(B.name)} Fees</h2>
           <div class="toolbar">
             <input id="bizQ" type="search" placeholder="name / ID / phone" value="${U.esc(bizState.q)}" style="min-width:150px"/>
@@ -2724,6 +2727,15 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     };
     draw();
     bindNav();
+    // clicking Pending Students / Outstanding jumps to the pending list
+    function jumpToPending() {
+      const el = $('#pendingPanel'); if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1600);
+      const q = $('#bizQ'); if (q) setTimeout(() => q.focus(), 400);
+    }
+    if ($('#pendingKpi')) $('#pendingKpi').onclick = jumpToPending;
+    if ($('#outstandingKpi')) $('#outstandingKpi').onclick = jumpToPending;
     $$('[data-print]').forEach(b => b.onclick = () => { const p = Store.payments.find(x => x.id === b.dataset.print); if (p) Receipt.open(p); });
     $$('[data-rcpt]').forEach(tr => tr.onclick = e => { if (e.target.dataset.print) return; const p = Store.payments.find(x => x.id === tr.dataset.rcpt); if (p) Receipt.open(p); });
   }

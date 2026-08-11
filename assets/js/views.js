@@ -1209,8 +1209,8 @@
       <div class="cards">
         ${kpi('Billed', U.inr(total), { accent: 'blue' })}
         ${kpi('Collected', U.inr(paid), { accent: 'green', sub: (total ? Math.round(paid / total * 100) : 0) + '% collected' })}
-        ${kpi('Outstanding', U.inr(outstanding), { accent: 'red' })}
-        ${kpi('Pending Students', pendingCount, { accent: 'amber' })}
+        <div class="card accent-red link" id="outstandingKpi"><div class="k">Outstanding</div><div class="v">${U.inr(outstanding)}</div><div class="sub">click for pending students</div></div>
+        <div class="card accent-amber link" id="pendingKpi"><div class="k">Pending Students</div><div class="v">${pendingCount}</div><div class="sub">click to view the list ↓</div></div>
       </div>
 
       <div class="panel"><div class="panel-head"><h2>Fee Heads — ${U.esc(B.name)}</h2></div>
@@ -1218,7 +1218,7 @@
         <tbody>${headAgg.map(h => `<tr><td><b>${U.esc(h.label)}</b></td><td class="num">${U.inr(h.t)}</td><td class="num" style="color:var(--green)">${U.inr(h.p)}</td><td class="num" style="color:${h.bal > 0 ? 'var(--red)' : 'var(--muted)'}">${U.inr(h.bal)}</td></tr>`).join('')}</tbody>
         <tfoot><tr style="font-weight:700;background:#f8fafc"><td>TOTAL</td><td class="num">${U.inr(total)}</td><td class="num" style="color:var(--green)">${U.inr(paid)}</td><td class="num" style="color:var(--red)">${U.inr(outstanding)}</td></tr></tfoot></table></div></div>
 
-      <div class="panel">
+      <div class="panel" id="pendingPanel">
         <div class="panel-head"><h2>Students with Pending ${U.esc(B.name)} Fees</h2>
           <div class="toolbar">
             <input id="bizQ" type="search" placeholder="name / ID / phone" value="${U.esc(bizState.q)}" style="min-width:150px"/>
@@ -1282,6 +1282,15 @@
     };
     draw();
     bindNav();
+    // clicking Pending Students / Outstanding jumps to the pending list
+    function jumpToPending() {
+      const el = $('#pendingPanel'); if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1600);
+      const q = $('#bizQ'); if (q) setTimeout(() => q.focus(), 400);
+    }
+    if ($('#pendingKpi')) $('#pendingKpi').onclick = jumpToPending;
+    if ($('#outstandingKpi')) $('#outstandingKpi').onclick = jumpToPending;
     $$('[data-print]').forEach(b => b.onclick = () => { const p = Store.payments.find(x => x.id === b.dataset.print); if (p) Receipt.open(p); });
     $$('[data-rcpt]').forEach(tr => tr.onclick = e => { if (e.target.dataset.print) return; const p = Store.payments.find(x => x.id === tr.dataset.rcpt); if (p) Receipt.open(p); });
   }
