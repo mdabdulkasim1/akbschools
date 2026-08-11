@@ -1443,10 +1443,14 @@
      TEACHER MODULE — Attendance, Report Cards (marks) & Academics
      ================================================================== */
 
-  // grades the current user may work with (admin = all; teacher = assigned)
+  // grades the current user may work with (admin = all; teacher = assigned).
+  // Resolve the FULL user record from the store — the lightweight session
+  // object only carries username/role/name, so read grades from Store.users
+  // (this also reflects class re-assignments made while the teacher is logged in).
   function myGrades() {
-    const u = Store.currentUser || {};
-    if (u.role === 'admin') return Store.gradeList();
+    const cu = Store.currentUser; if (!cu) return [];
+    if (cu.role === 'admin') return Store.gradeList();
+    const u = Store.getUser(cu.username) || cu;
     return Array.isArray(u.grades) ? u.grades.filter(Boolean) : [];
   }
   const GRADE_COLORS = { EX: '#16a34a', GD: '#2563eb', SA: '#d97706', NI: '#dc2626' };

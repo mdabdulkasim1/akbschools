@@ -588,7 +588,7 @@
     async persistUsers() { return this.persist(); },
     // session (persisted so a refresh keeps you logged in on this device)
     setSession(u) {
-      this.currentUser = u ? { username: u.username, role: u.role, name: u.name } : null;
+      this.currentUser = u ? { username: u.username, role: u.role, name: u.name, grades: Array.isArray(u.grades) ? u.grades.slice() : undefined } : null;
       if (u) LS.setItem('akb_session', JSON.stringify({ username: u.username, ts: Date.now() }));
       else LS.removeItem('akb_session');
     },
@@ -597,7 +597,7 @@
         const s = JSON.parse(LS.getItem('akb_session') || 'null');
         if (!s) return null;
         const u = this.getUser(s.username);
-        if (u) { this.currentUser = { username: u.username, role: u.role, name: u.name }; return this.currentUser; }
+        if (u) { this.currentUser = { username: u.username, role: u.role, name: u.name, grades: Array.isArray(u.grades) ? u.grades.slice() : undefined }; return this.currentUser; }
       } catch (e) {}
       return null;
     },
