@@ -2628,7 +2628,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
   }
 
   /* -------------------------------------------------- Business dashboard (admin) */
-  let bizState = { q: '', grade: '', head: '', sort: 'balance' };
+  let bizState = { q: '', grade: '', head: '', paid: '', sort: 'balance' };
   function businessDashboard(key, params) {
     const B = Store.BUSINESSES[key];
     if (!B) { view().innerHTML = `<div class="empty">Unknown business. <a href="#/dashboard">Back to dashboard</a></div>`; return; }
@@ -2706,7 +2706,8 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
             <input id="bizQ" type="search" placeholder="name / ID / phone" value="${U.esc(bizState.q)}" style="min-width:150px"/>
             <select id="bizGrade"><option value="">All grades</option>${grades.map(g => `<option${bizState.grade === g ? ' selected' : ''}>${U.esc(g)}</option>`).join('')}</select>
             ${heads.length > 1 ? `<select id="bizHead"><option value="">All ${U.esc(B.name)} heads</option>${heads.map(k => `<option value="${k}"${bizState.head === k ? ' selected' : ''}>${U.esc(Store.HEAD_LABELS[k])}</option>`).join('')}</select>` : ''}
-            <select id="bizSort"><option value="balance"${bizState.sort === 'balance' ? ' selected' : ''}>Sort: Pending ↓</option><option value="name"${bizState.sort === 'name' ? ' selected' : ''}>Sort: Name</option><option value="grade"${bizState.sort === 'grade' ? ' selected' : ''}>Sort: Grade</option></select>
+            <select id="bizPaid"><option value="">Paid: All</option><option value="zero"${bizState.paid === 'zero' ? ' selected' : ''}>Paid = ₹0 (none)</option><option value="part"${bizState.paid === 'part' ? ' selected' : ''}>Paid &gt; ₹0 (part)</option></select>
+            <select id="bizSort"><option value="balance"${bizState.sort === 'balance' ? ' selected' : ''}>Sort: Pending ↓</option><option value="name"${bizState.sort === 'name' ? ' selected' : ''}>Sort: Name</option><option value="grade"${bizState.sort === 'grade' ? ' selected' : ''}>Sort: Grade</option><option value="paid"${bizState.sort === 'paid' ? ' selected' : ''}>Sort: Paid ↓</option></select>
           </div></div>
         <div class="table-scroll"><table>
           <thead><tr><th>Student</th><th>Grade</th><th>Contact</th>${heads.map(k => `<th class="t-right">${U.esc(Store.HEAD_LABELS[k])}</th>`).join('')}<th class="t-right">Paid</th><th class="t-right">Pending</th><th></th></tr></thead>
@@ -2725,11 +2726,15 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     function pendingHeadBal(s, k) { return (s.fees[k] || {}).balance || 0; }
     function filtered() {
       const q = bizState.q.trim().toLowerCase();
-      let rows = Store.students.map(s => ({ s, bal: bizState.head ? pendingHeadBal(s, bizState.head) : bizBal(s) }));
+      let rows = Store.students.map(s => ({ s, bal: bizState.head ? pendingHeadBal(s, bizState.head) : bizBal(s), paid: bizPaid(s) }));
       rows = rows.filter(r => r.bal > 0);
       if (bizState.grade) rows = rows.filter(r => r.s.grade === bizState.grade);
+      if (bizState.paid === 'zero') rows = rows.filter(r => r.paid === 0);
+      else if (bizState.paid === 'part') rows = rows.filter(r => r.paid > 0);
       if (q) rows = rows.filter(r => (r.s.name + ' ' + r.s.id + ' ' + (r.s.contact || '')).toLowerCase().indexOf(q) >= 0);
-      rows.sort((a, b) => bizState.sort === 'name' ? a.s.name.localeCompare(b.s.name) : (bizState.sort === 'grade' ? (a.s.grade || '').localeCompare(b.s.grade || '') : b.bal - a.bal));
+      rows.sort((a, b) => bizState.sort === 'name' ? a.s.name.localeCompare(b.s.name)
+        : (bizState.sort === 'grade' ? (a.s.grade || '').localeCompare(b.s.grade || '')
+          : (bizState.sort === 'paid' ? b.paid - a.paid : b.bal - a.bal)));
       return rows;
     }
     function draw() {
@@ -2750,6 +2755,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     $('#bizQ').oninput = U.debounce(e => { bizState.q = e.target.value; draw(); }, 150);
     $('#bizGrade').onchange = e => { bizState.grade = e.target.value; draw(); };
     if ($('#bizHead')) $('#bizHead').onchange = e => { bizState.head = e.target.value; draw(); };
+    $('#bizPaid').onchange = e => { bizState.paid = e.target.value; draw(); };
     $('#bizSort').onchange = e => { bizState.sort = e.target.value; draw(); };
     $('#bizExp').onclick = () => {
       const rows = filtered();
@@ -2759,7 +2765,8 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     };
     $('#bizPrint').onclick = () => {
       const rows = filtered();
-      const filterNote = [groupLabel ? groupLabel.replace(/^\s*—\s*/, '') : '', bizState.grade ? 'Class: ' + bizState.grade : '', bizState.head ? Store.HEAD_LABELS[bizState.head] : '', bizState.q ? 'Search: "' + bizState.q + '"' : '']
+      const filterNote = [groupLabel ? groupLabel.replace(/^\s*—\s*/, '') : '', bizState.grade ? 'Class: ' + bizState.grade : '', bizState.head ? Store.HEAD_LABELS[bizState.head] : '',
+        bizState.paid === 'zero' ? 'Paid = ₹0' : (bizState.paid === 'part' ? 'Paid > ₹0' : ''), bizState.q ? 'Search: "' + bizState.q + '"' : '']
         .filter(Boolean).join(' · ');
       printPendingList(B, heads, rows, pendingHeadBal, filterNote, bizPaid);
     };
