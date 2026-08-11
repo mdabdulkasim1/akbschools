@@ -83,7 +83,10 @@
     { title: 'Physical Development & Fine Motor', items: ['Holds pencil/crayons correctly', 'Can trace lines, shapes, and letters', 'Can cut, paste, and handle small objects', 'Runs, jumps, and climbs confidently', 'Participates actively in outdoor games', 'Shows balance and coordination'] }
   ];
   const REPORT = { ASSESSMENTS, GRADE_SCALE, SUBJECTS, KG_DOMAINS };
-  function isKG(grade) { return /\bKG\b|KINDER/i.test(String(grade || '')); }
+  // Kindergarten classes use the skill checklist (not numeric subject marks).
+  // Matches PRE KG, PREKG, LKG, JKG, UKG, SKG, KG, KINDER… — note "JKG"/"SKG"
+  // have no word boundary before "KG", so anchor on the END boundary instead.
+  function isKG(grade) { return /KG\b|KINDER/i.test(String(grade || '')); }
   function normRole(role) { return role === 'admin' ? 'admin' : (role === 'teacher' ? 'teacher' : 'account'); }
 
   // Rebuild the HEAD_* lookups (in place) from a fee-head config array.

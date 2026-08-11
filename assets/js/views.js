@@ -1454,6 +1454,18 @@
     return Array.isArray(u.grades) ? u.grades.filter(Boolean) : [];
   }
   const GRADE_COLORS = { EX: '#16a34a', GD: '#2563eb', SA: '#d97706', NI: '#dc2626' };
+  // Grades 1-9 store numeric marks (0-100); KG stores skill grade codes.
+  // Derive the EX/GD/SA/NI band from a numeric mark, matching the grade scale.
+  function gradeFromMark(m) { m = Number(m); if (!isFinite(m)) return ''; if (m >= 90) return 'EX'; if (m >= 75) return 'GD'; if (m >= 60) return 'SA'; return 'NI'; }
+  // Return the grade code for a stored cell value (numeric mark OR grade code).
+  function cellGrade(v) { if (v == null || v === '') return ''; return /^\d+(\.\d+)?$/.test(String(v)) ? gradeFromMark(v) : String(v); }
+  function isNumericCell(v) { return /^\d+(\.\d+)?$/.test(String(v)); }
+  // 0-100 marks options for a <select>
+  function markOptions(val) {
+    let o = '<option value="">–</option>';
+    for (let m = 100; m >= 0; m--) o += `<option value="${m}"${String(val) === String(m) ? ' selected' : ''}>${m}</option>`;
+    return o;
+  }
   function lastDates(n) {
     const out = [], d = new Date();
     for (let i = n - 1; i >= 0; i--) { const dd = new Date(d); dd.setDate(d.getDate() - i); out.push(dd.toISOString().slice(0, 10)); }
@@ -1580,19 +1592,21 @@
     if (student) {
       const report = student.report || {}; const marksData = report.marks || {};
       const rowsCfg = reportKeysFor(markState.grade);
-      const optCells = code => Store.REPORT.GRADE_SCALE.map(g => `<option value="${g.code}"${code === g.code ? ' selected' : ''}>${g.code}</option>`).join('');
+      // KG → skill grade (EX/GD/SA/NI); Grades 1-9 → numeric marks 0-100
+      const gradeSelectOpts = code => Store.REPORT.GRADE_SCALE.map(g => `<option value="${g.code}"${code === g.code ? ' selected' : ''}>${g.code}</option>`).join('');
+      const cellControl = (key, aKey, val) => kg
+        ? `<select class="mk-sel" data-key="${U.esc(key)}" data-as="${aKey}"><option value="">–</option>${gradeSelectOpts(val || '')}</select>`
+        : `<select class="mk-sel mk-num" data-key="${U.esc(key)}" data-as="${aKey}" style="color:${GRADE_COLORS[cellGrade(val)] || '#334155'}" title="${val !== '' && val != null ? val + ' = ' + cellGrade(val) : 'marks 0-100'}">${markOptions(val)}</select>`;
       let body = '', lastGroup = null;
       rowsCfg.forEach(r => {
         if (r.group !== lastGroup) { body += `<tr class="grp-row"><td colspan="${1 + Store.REPORT.ASSESSMENTS.length}">${U.esc(r.group)}</td></tr>`; lastGroup = r.group; }
         const cell = marksData[r.key] || {};
-        const tds = Store.REPORT.ASSESSMENTS.map(a =>
-          `<td class="t-center"><select class="mk-sel" data-key="${U.esc(r.key)}" data-as="${a.key}"><option value="">–</option>${optCells(cell[a.key] || '')}</select></td>`
-        ).join('');
+        const tds = Store.REPORT.ASSESSMENTS.map(a => `<td class="t-center">${cellControl(r.key, a.key, cell[a.key] == null ? '' : cell[a.key])}</td>`).join('');
         body += `<tr><td>${U.esc(r.label)}</td>${tds}</tr>`;
       });
       const asHead = Store.REPORT.ASSESSMENTS.map(a => `<th class="t-center">${U.esc(a.label)}</th>`).join('');
       gridHtml = `
-        <div class="scale-legend">${Store.REPORT.GRADE_SCALE.map(g => `<span><b style="color:${GRADE_COLORS[g.code]}">${g.code}</b> ${U.esc(g.label)}</span>`).join('')}</div>
+        <div class="scale-legend">${kg ? '' : '<span class="muted">Enter marks 0–100; grade is derived → </span>'}${Store.REPORT.GRADE_SCALE.map(g => `<span><b style="color:${GRADE_COLORS[g.code]}">${g.code}</b> ${U.esc(g.label)}</span>`).join('')}</div>
         <div class="table-scroll"><table class="marks-grid">
           <thead><tr><th>${kg ? 'Skill / Ability' : 'Subject'}</th>${asHead}</tr></thead>
           <tbody>${body}</tbody></table></div>
@@ -1605,7 +1619,7 @@
     }
 
     view().innerHTML = `
-      <div class="page-head"><div><h1>Report Cards</h1><p>Enter recent assessment grades for each student — as per the AKB report card</p></div></div>
+      <div class="page-head"><div><h1>Report Cards</h1><p>${kg ? 'Tick skill grades for each student' : 'Enter numeric marks (0–100) per assessment — grade is auto-derived'} — as per the AKB report card</p></div></div>
       <div class="panel"><div class="panel-head">
         <div class="toolbar">
           <label class="fld"><span>Class</span><select id="mkGrade">${gradeOpts}</select></label>
@@ -1616,6 +1630,12 @@
 
     $('#mkGrade').onchange = e => { markState.grade = e.target.value; markState.studentId = ''; marks(); };
     $('#mkStudent').onchange = e => { markState.studentId = e.target.value; marks(); };
+    // recolor numeric marks by their derived grade band as they're picked
+    $$('.mk-num').forEach(sel => sel.onchange = () => {
+      const g = cellGrade(sel.value);
+      sel.style.color = GRADE_COLORS[g] || '#334155';
+      sel.title = sel.value ? sel.value + ' = ' + g : 'marks 0-100';
+    });
     const save = $('#mkSave');
     if (save) save.onclick = async () => {
       const marksData = {};
@@ -1639,7 +1659,13 @@
     rowsCfg.forEach(r => {
       if (kg && r.group !== lastGroup) { body += `<tr class="grp"><td colspan="${1 + Store.REPORT.ASSESSMENTS.length}">${U.esc(r.group)}</td></tr>`; lastGroup = r.group; }
       const cell = marksData[r.key] || {};
-      const tds = Store.REPORT.ASSESSMENTS.map(a => { const v = cell[a.key] || ''; return `<td style="text-align:center;font-weight:700;color:${GRADE_COLORS[v] || '#334155'}">${U.esc(v)}</td>`; }).join('');
+      const tds = Store.REPORT.ASSESSMENTS.map(a => {
+        const v = cell[a.key] == null ? '' : cell[a.key];
+        const g = cellGrade(v);
+        // Grades 1-9: show the numeric mark + derived grade; KG: show the grade code
+        const disp = v === '' ? '' : (isNumericCell(v) ? v + ' <small>(' + g + ')</small>' : v);
+        return `<td style="text-align:center;font-weight:700;color:${GRADE_COLORS[g] || '#334155'}">${disp}</td>`;
+      }).join('');
       body += `<tr><td>${U.esc(r.label)}</td>${tds}</tr>`;
     });
     const school = (Store.meta && Store.meta.school) || 'AKB School of Excellence';
@@ -1734,7 +1760,7 @@
 
     // grade-scale distribution across all entered marks
     const scaleCount = { EX: 0, GD: 0, SA: 0, NI: 0 };
-    students.forEach(s => { const m = (s.report && s.report.marks) || {}; Object.keys(m).forEach(k => Object.keys(m[k]).forEach(a => { const v = m[k][a]; if (scaleCount[v] != null) scaleCount[v]++; })); });
+    students.forEach(s => { const m = (s.report && s.report.marks) || {}; Object.keys(m).forEach(k => Object.keys(m[k]).forEach(a => { const g = cellGrade(m[k][a]); if (scaleCount[g] != null) scaleCount[g]++; })); });
     const totalMarks = scaleCount.EX + scaleCount.GD + scaleCount.SA + scaleCount.NI;
     const segs = Store.REPORT.GRADE_SCALE.map(g => ({ label: g.code, value: scaleCount[g.code], color: GRADE_COLORS[g.code] }));
 
