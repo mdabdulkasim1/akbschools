@@ -46,6 +46,19 @@
     { key: 'evening_sports', label: 'Evening Sports', business: 'sports' },
     { key: 'event', label: 'Event Fees', business: 'school' }
   ];
+  // Transport is billed & collected MONTHLY across the academic year
+  // (April → March). The single 'transport' fee head is the roll-up of the
+  // 12 monthly amounts kept on student.transport = { 'YYYY-MM': {total, paid} }.
+  const TRANSPORT_HEAD = 'transport';
+  const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function pad2(n) { return String(n).padStart(2, '0'); }
+  // 12 months Apr(startYear) … Mar(startYear+1), derived from the academic year
+  function buildTransportMonths(yearStr) {
+    const y0 = parseInt(String(yearStr || '2026-2027').split('-')[0], 10) || 2026;
+    const out = []; let y = y0, m = 4;
+    for (let i = 0; i < 12; i++) { out.push({ key: y + '-' + pad2(m), label: MONTH_NAMES[m - 1] + ' ' + y }); m++; if (m > 12) { m = 1; y++; } }
+    return out;
+  }
   // These are kept in sync (mutated in place) by rebuildHeads() from the active
   // fee-head config, so views that read Store.HEAD_ORDER/HEAD_LABELS stay current.
   const HEAD_ORDER = [];
@@ -262,12 +275,61 @@
     },
 
     recompute(s) {
+      // Transport head is the roll-up of its 12 monthly amounts.
+      if (HEAD_ORDER.indexOf(TRANSPORT_HEAD) >= 0) {
+        this.ensureTransport(s);
+        let t = 0, p = 0;
+        this.transportMonths().forEach(mm => { const c = s.transport[mm.key] || {}; t += Number(c.total) || 0; p += Number(c.paid) || 0; });
+        if (s.fees[TRANSPORT_HEAD]) { s.fees[TRANSPORT_HEAD].total = t; s.fees[TRANSPORT_HEAD].paid = p; }
+      }
       HEAD_ORDER.forEach(k => {
         const h = s.fees[k]; if (!h) return;
         h.balance = Math.round(((Number(h.total) || 0) - (Number(h.paid) || 0)) * 100) / 100;
       });
     },
     recomputeAll() { this.students.forEach(s => this.recompute(s)); },
+
+    /* ---- transport (monthly, Apr → Mar) ---- */
+    transportMonths() { return buildTransportMonths(this.meta && this.meta.year); },
+    // Ensure student.transport has all 12 months. First time (legacy data), split
+    // the existing single transport total/paid evenly across the months.
+    ensureTransport(s) {
+      const months = this.transportMonths();
+      s.transport = s.transport || {};
+      const hasData = months.some(mm => s.transport[mm.key] && ((Number(s.transport[mm.key].total) || 0) || (Number(s.transport[mm.key].paid) || 0)));
+      const head = s.fees && s.fees[TRANSPORT_HEAD];
+      if (!hasData && head && ((Number(head.total) || 0) > 0 || (Number(head.paid) || 0) > 0)) {
+        const T = Math.round(Number(head.total) || 0), P = Math.round(Number(head.paid) || 0);
+        const per = Math.floor(T / 12), rem = T - per * 12;
+        let paidLeft = P;
+        months.forEach((mm, i) => {
+          const mt = per + (i < rem ? 1 : 0);
+          const mp = Math.min(paidLeft, mt); paidLeft -= mp;
+          s.transport[mm.key] = { total: mt, paid: mp };
+        });
+        if (paidLeft > 0) { const last = months[months.length - 1].key; s.transport[last].paid += paidLeft; s.transport[last].total = Math.max(s.transport[last].total, s.transport[last].paid); }
+      } else {
+        months.forEach(mm => { const c = s.transport[mm.key] || {}; s.transport[mm.key] = { total: Number(c.total) || 0, paid: Number(c.paid) || 0 }; });
+      }
+      return s.transport;
+    },
+    // Save an edited set of monthly amounts (from the edit modal).
+    async setTransportMonths(s, data) {
+      this.ensureTransport(s);
+      this.transportMonths().forEach(mm => {
+        const c = (data && data[mm.key]) || {};
+        s.transport[mm.key] = { total: Number(c.total) || 0, paid: Number(c.paid) || 0 };
+      });
+      await this.saveStudent(s); // recomputes the roll-up + persists
+    },
+    // Per-student monthly view: [{key,label,total,paid,balance}]
+    transportBreakdown(s) {
+      this.ensureTransport(s);
+      return this.transportMonths().map(mm => {
+        const c = s.transport[mm.key] || { total: 0, paid: 0 };
+        return { key: mm.key, label: mm.label, total: Number(c.total) || 0, paid: Number(c.paid) || 0, balance: (Number(c.total) || 0) - (Number(c.paid) || 0) };
+      });
+    },
 
     async persistStudents() { return this.persist(); },
     async persistStudent(s) { return this.persist(); },
@@ -290,14 +352,28 @@
       p.items.forEach(it => {
         const amt = Number(it.amount) || 0; if (amt <= 0) return;
         const biz = HEAD_BUSINESS[it.head] || 'school';
-        (groups[biz] = groups[biz] || []).push({ head: it.head, label: HEAD_LABELS[it.head] || it.head, amount: amt });
-        const h = student.fees[it.head];
-        if (h) {
-          h.paid = (Number(h.paid) || 0) + amt;
-          // ad-hoc fee (e.g. student newly joins Evening Sports/an event): bill it
-          // on the spot so the balance never goes negative.
-          h.total = Math.max(Number(h.total) || 0, h.paid);
+        let label = HEAD_LABELS[it.head] || it.head;
+        if (it.head === TRANSPORT_HEAD && it.month) {
+          // monthly transport collection → apply to that month
+          this.ensureTransport(student);
+          const mm = student.transport[it.month] || { total: 0, paid: 0 };
+          mm.paid = (Number(mm.paid) || 0) + amt;
+          mm.total = Math.max(Number(mm.total) || 0, mm.paid);
+          student.transport[it.month] = mm;
+          const ml = (this.transportMonths().find(x => x.key === it.month) || {}).label || it.month;
+          label = (HEAD_LABELS[TRANSPORT_HEAD] || 'Transport Fees') + ' – ' + ml;
+        } else {
+          const h = student.fees[it.head];
+          if (h) {
+            h.paid = (Number(h.paid) || 0) + amt;
+            // ad-hoc fee (e.g. student newly joins Evening Sports/an event): bill it
+            // on the spot so the balance never goes negative.
+            h.total = Math.max(Number(h.total) || 0, h.paid);
+          }
         }
+        const item = { head: it.head, label, amount: amt };
+        if (it.month) item.month = it.month;
+        (groups[biz] = groups[biz] || []).push(item);
       });
       this.recompute(student);
 
@@ -332,8 +408,13 @@
       const student = this.getStudent(rec.studentId);
       if (student) {
         rec.items.forEach(it => {
-          const h = student.fees[it.head];
-          if (h) h.paid = Math.max(0, (Number(h.paid) || 0) - (Number(it.amount) || 0));
+          if (it.head === TRANSPORT_HEAD && it.month) {
+            this.ensureTransport(student);
+            const mm = student.transport[it.month]; if (mm) mm.paid = Math.max(0, (Number(mm.paid) || 0) - (Number(it.amount) || 0));
+          } else {
+            const h = student.fees[it.head];
+            if (h) h.paid = Math.max(0, (Number(h.paid) || 0) - (Number(it.amount) || 0));
+          }
         });
         this.recompute(student);
       }
@@ -456,7 +537,8 @@
       this.recompute(s);
       const i = this.students.findIndex(x => x.id === s.id);
       if (i < 0) this.students.push(s);
-      if (useIDB) await idbPut('students', s);
+      if (serverMode) { await this.persist(); return; }   // sync edits to the shared server
+      if (useIDB && db) await idbPut('students', s);
       else LS.setItem('akb_students', JSON.stringify(this.students));
     },
     // Delete a student record. Past receipts are kept (they carry the student's
