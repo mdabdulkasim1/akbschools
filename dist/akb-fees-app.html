@@ -80,6 +80,7 @@ tbody tr.clickable{cursor:pointer}
 .num{text-align:right;font-variant-numeric:tabular-nums}
 .table-scroll{overflow:auto;max-height:none}
 .t-right{ text-align:right }
+.t-center{ text-align:center }
 
 /* Badges & pills */
 .badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600}
@@ -215,6 +216,47 @@ h4.sec:first-child{margin-top:0}
 .fee-head-hdr{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:10px;font-size:11px;text-transform:uppercase;color:var(--muted);font-weight:600;padding:0 0 4px}
 .fee-head-hdr span:not(:first-child){text-align:right}
 
+/* ===== Teacher module: attendance, report cards, academics ===== */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media (max-width:860px){.grid-2{grid-template-columns:1fr}}
+.fld{display:flex;flex-direction:column;gap:4px}
+.fld > span{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.3px}
+.fld input,.fld select{padding:8px 12px;border:1px solid var(--border);border-radius:9px;font-size:13px;background:#fff}
+.sel-inline{padding:4px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:#fff}
+.chk-grid{display:flex;flex-wrap:wrap;gap:8px 16px}
+.chk-inline{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:500;background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer}
+.chk-inline input{margin:0}
+
+/* attendance toggle */
+.att-toggle{display:inline-flex;border:1px solid var(--border);border-radius:9px;overflow:hidden}
+.att-btn{border:none;background:#fff;padding:6px 16px;font-size:13px;font-weight:600;cursor:pointer;color:var(--muted)}
+.att-btn.p.on{background:var(--green);color:#fff}
+.att-btn.a.on{background:var(--red);color:#fff}
+.att-btn:not(.on):hover{background:#f1f5f9}
+.att-btn + .att-btn{border-left:1px solid var(--border)}
+tr.row-absent{background:var(--red-l)}
+
+/* marks grid */
+.marks-grid td,.marks-grid th{padding:6px 8px}
+.marks-grid tr.grp-row td{background:#f1f5f9;font-weight:700;color:#334155;font-size:12px;text-transform:uppercase;letter-spacing:.3px}
+.mk-sel{padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-weight:600;background:#fff;min-width:56px}
+.scale-legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12px;color:var(--muted);margin-bottom:12px}
+.scale-legend b{font-size:13px}
+
+/* horizontal bars */
+.hbars{display:flex;flex-direction:column;gap:10px}
+.hbar-row{display:grid;grid-template-columns:120px 1fr 90px;align-items:center;gap:12px}
+.hbar-lbl{font-size:13px;font-weight:600;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hbar-track{height:14px;background:#eef2f7;border-radius:20px;overflow:hidden}
+.hbar-track > span{display:block;height:100%;border-radius:20px}
+.hbar-val{font-size:13px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+
+/* donut */
+.donut-wrap{display:flex;align-items:center;gap:24px;flex-wrap:wrap;justify-content:center}
+.donut-legend{display:flex;flex-direction:column;gap:8px;font-size:13px}
+.donut-legend span{display:flex;align-items:center;gap:8px}
+.donut-legend i{width:13px;height:13px;border-radius:3px;display:inline-block}
+
 /* ===== Print (receipt) ===== */
 @media print{
   body{background:#fff}
@@ -248,13 +290,16 @@ h4.sec:first-child{margin-top:0}
         </div>
       </div>
       <nav class="nav" id="nav">
-        <a href="#/dashboard" data-route="dashboard"><span class="ico">📊</span> Dashboard</a>
-        <a href="#/students" data-route="students"><span class="ico">👨‍🎓</span> Students</a>
-        <a href="#/collect" data-route="collect"><span class="ico">🧾</span> Receive Payment</a>
-        <a href="#/collections" data-route="collections"><span class="ico">💵</span> Collections</a>
-        <a href="#/reports" data-route="reports"><span class="ico">📈</span> Reports</a>
-        <a href="#/users" data-route="users" data-admin="1"><span class="ico">👥</span> Users</a>
-        <a href="#/data" data-route="data" data-admin="1"><span class="ico">⚙️</span> Data &amp; Backup</a>
+        <a href="#/dashboard" data-route="dashboard" data-roles="admin account"><span class="ico">📊</span> Dashboard</a>
+        <a href="#/students" data-route="students" data-roles="admin account"><span class="ico">👨‍🎓</span> Students</a>
+        <a href="#/collect" data-route="collect" data-roles="admin account"><span class="ico">🧾</span> Receive Payment</a>
+        <a href="#/collections" data-route="collections" data-roles="admin account"><span class="ico">💵</span> Collections</a>
+        <a href="#/reports" data-route="reports" data-roles="admin account"><span class="ico">📈</span> Reports</a>
+        <a href="#/attendance" data-route="attendance" data-roles="admin teacher"><span class="ico">📝</span> Attendance</a>
+        <a href="#/marks" data-route="marks" data-roles="admin teacher"><span class="ico">📚</span> Report Cards</a>
+        <a href="#/academics" data-route="academics" data-roles="admin"><span class="ico">🎓</span> Academics</a>
+        <a href="#/users" data-route="users" data-roles="admin"><span class="ico">👥</span> Users</a>
+        <a href="#/data" data-route="data" data-roles="admin"><span class="ico">⚙️</span> Data &amp; Backup</a>
       </nav>
       <div class="sidebar-foot">
         <div class="user-box" id="userBox"></div>
@@ -520,6 +565,28 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
   const SCHOOL_WHATSAPP = '+919003950980';
   const SCHOOL_WHATSAPP_DISPLAY = '+91 90039 50980';
 
+  // ---- Report card config (attendance + marks) ----
+  const ASSESSMENTS = [
+    { key: 'pt1', label: 'PT1' }, { key: 'pt2', label: 'PT2' }, { key: 'term1', label: 'Term I' },
+    { key: 'pt3', label: 'PT3' }, { key: 'term2', label: 'Term II' }
+  ];
+  const GRADE_SCALE = [
+    { code: 'EX', label: 'Excellent (90-100%)' }, { code: 'GD', label: 'Good (75-89%)' },
+    { code: 'SA', label: 'Satisfactory (60-74%)' }, { code: 'NI', label: 'Need Improvement (<60%)' }
+  ];
+  const SUBJECTS = ['English', 'Tamil', 'Maths', 'EVS/Science', 'Social', 'Robotics', 'Hindi', 'Arabic/V.E'];
+  const KG_DOMAINS = [
+    { title: 'Personal, Social & Emotional Development', items: ['Adjusts well to new environment', 'Interacts confidently with peers and teachers', 'Shares and takes turns willingly', 'Follows classroom rules and routines', 'Demonstrates responsibility in handling belongings', 'Expresses feelings appropriately'] },
+    { title: 'Language & Communication Skills', items: ['Listens attentively to stories and instructions', 'Identifies letters (uppercase & lowercase)', 'Recognizes beginning sounds of words', 'Speaks clearly in simple sentences', 'Participates in storytelling, rhymes, and role play', 'Vocabulary development'] },
+    { title: 'Cognitive / Pre-Math Skills', items: ['Recognizes numbers 1-20', 'Counts objects with one-to-one correspondence', 'Understands basic concepts (big/small, more/less)', 'Identifies and sorts shapes and colors', 'Recognizes patterns and sequences', 'Matches objects and pictures correctly'] },
+    { title: 'Environmental Awareness & GK', items: ['Identifies common animals, birds, and insects', 'Recognizes fruits and vegetables', 'Knows days of the week and seasons', 'Shows curiosity and interest in surroundings', 'Understands basic safety and hygiene rules'] },
+    { title: 'Creative & Aesthetic Development', items: ['Enjoys drawing, coloring, and painting', 'Participates in music, dance, and singing', 'Demonstrates creativity in craft work', 'Uses imagination in role-play/dramatic activities'] },
+    { title: 'Physical Development & Fine Motor', items: ['Holds pencil/crayons correctly', 'Can trace lines, shapes, and letters', 'Can cut, paste, and handle small objects', 'Runs, jumps, and climbs confidently', 'Participates actively in outdoor games', 'Shows balance and coordination'] }
+  ];
+  const REPORT = { ASSESSMENTS, GRADE_SCALE, SUBJECTS, KG_DOMAINS };
+  function isKG(grade) { return /\bKG\b|KINDER/i.test(String(grade || '')); }
+  function normRole(role) { return role === 'admin' ? 'admin' : (role === 'teacher' ? 'teacher' : 'account'); }
+
   // Rebuild the HEAD_* lookups (in place) from a fee-head config array.
   function rebuildHeads(feeHeads) {
     HEAD_ORDER.length = 0;
@@ -550,6 +617,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     currentUser: null,
     ENTITIES, MODES, HEAD_ORDER, HEAD_LABELS, BUSINESS, BUSINESSES, BUSINESS_ORDER, HEAD_BUSINESS,
     SCHOOL_WHATSAPP, SCHOOL_WHATSAPP_DISPLAY, DEFAULT_FEE_HEADS,
+    REPORT, isKG,
 
     serverMode() { return serverMode; },
 
@@ -899,6 +967,59 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       await this.persist();
     },
 
+    /* ---- attendance (meta.attendance = { 'YYYY-MM-DD': { studentId: 'P'|'A' } }) ---- */
+    getAttendance(date) {
+      const a = this.meta.attendance || {};
+      return a[date] || {};
+    },
+    async setAttendance(date, studentId, status) {
+      if (!this.meta.attendance) this.meta.attendance = {};
+      if (!this.meta.attendance[date]) this.meta.attendance[date] = {};
+      this.meta.attendance[date][studentId] = status; // 'P' | 'A'
+      await this.persist();
+    },
+    // Mark every student in a grade present for a date (default fill).
+    async markAllPresent(date, grade) {
+      if (!this.meta.attendance) this.meta.attendance = {};
+      if (!this.meta.attendance[date]) this.meta.attendance[date] = {};
+      const day = this.meta.attendance[date];
+      this.students.filter(s => !grade || s.grade === grade).forEach(s => {
+        if (!day[s.id]) day[s.id] = 'P';
+      });
+      await this.persist();
+    },
+    // Students absent on a date (optionally within a grade).
+    absenteesOn(date, grade) {
+      const day = this.getAttendance(date);
+      return this.students.filter(s => (!grade || s.grade === grade) && day[s.id] === 'A');
+    },
+    // list of grades present in the roster, in a sensible order
+    // (kindergarten first, then numeric/Roman-numeral grades in order, sections after)
+    gradeList() {
+      const kg = ['PRE KG', 'PREKG', 'PRE-KG', 'LKG', 'JKG', 'UKG', 'SKG', 'KG'];
+      const roman = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7, VIII: 8, IX: 9, X: 10, XI: 11, XII: 12 };
+      const set = Array.from(new Set(this.students.map(s => s.grade).filter(Boolean)));
+      const rank = g => {
+        const u = String(g).toUpperCase().trim();
+        const oi = kg.indexOf(u); if (oi >= 0) return oi;                 // 0..7 KG classes
+        const kgSection = u.match(/^(PRE KG|PREKG|PRE-KG|LKG|JKG|UKG|SKG|KG)\b/);
+        if (kgSection) return kg.indexOf(kgSection[1]) + 0.5;             // e.g. "JKG A"
+        const ar = u.match(/(\d+)/); if (ar) return 100 + parseInt(ar[1], 10); // Arabic "Grade 3"
+        const rm = u.match(/^([IVX]+)\b/); if (rm && roman[rm[1]]) return 100 + roman[rm[1]]; // "IX A"
+        return 900;
+      };
+      return set.sort((a, b) => rank(a) - rank(b) || String(a).localeCompare(String(b)));
+    },
+
+    /* ---- report cards (student.report) ---- */
+    async saveStudentReport(id, report) {
+      const s = this.students.find(x => x.id === id);
+      if (!s) throw new Error('Student not found');
+      s.report = report || {};
+      s.reportUpdatedAt = new Date().toISOString();
+      await this.persist();
+    },
+
     /* ---- users & auth (client-side gate) ---- */
     async seedUsers() {
       const defs = [
@@ -932,21 +1053,30 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       u.mustChange = false;
       await this.persistUsers();
     },
-    async addUser({ username, role, name, password }) {
+    async addUser({ username, role, name, password, grades }) {
       username = String(username || '').trim();
       if (!username) throw new Error('Username required');
       if (this.getUser(username)) throw new Error('Username already exists');
       if (!password || password.length < 4) throw new Error('Password too short (min 4)');
       const salt = randSalt();
-      this.users.push({
-        username, role: role === 'admin' ? 'admin' : 'account', name: name || username,
+      const u = {
+        username, role: normRole(role), name: name || username,
         salt, hash: await pbkdf(password, salt), mustChange: false, createdAt: new Date().toISOString()
-      });
+      };
+      if (u.role === 'teacher') u.grades = Array.isArray(grades) ? grades.slice() : [];
+      this.users.push(u);
       await this.persistUsers();
     },
     async updateUserRole(username, role) {
       const u = this.getUser(username); if (!u) return;
-      u.role = role === 'admin' ? 'admin' : 'account';
+      u.role = normRole(role);
+      if (u.role === 'teacher') { if (!Array.isArray(u.grades)) u.grades = []; }
+      else delete u.grades;
+      await this.persistUsers();
+    },
+    async setUserGrades(username, grades) {
+      const u = this.getUser(username); if (!u) return;
+      u.grades = Array.isArray(grades) ? grades.slice() : [];
       await this.persistUsers();
     },
     async deleteUser(username) {
@@ -2393,38 +2523,56 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
   }
 
   /* -------------------------------------------------- Users (admin) */
+  function roleBadge(r) {
+    const cls = r === 'admin' ? 'blue' : (r === 'teacher' ? 'amber' : 'gray');
+    return `<span class="badge ${cls}">${U.esc(r)}</span>`;
+  }
   function users() {
-    const rows = Store.users.map(u => `<tr>
+    const rows = Store.users.map(u => {
+      const isT = u.role === 'teacher';
+      const gr = isT ? (Array.isArray(u.grades) && u.grades.length ? u.grades.join(', ') : '<span style="color:var(--red)">no class assigned</span>') : '<span class="muted">—</span>';
+      return `<tr>
       <td><b>${U.esc(u.name || u.username)}</b><div class="muted" style="font-size:11px">@${U.esc(u.username)}</div></td>
-      <td><span class="badge ${u.role === 'admin' ? 'blue' : 'gray'}">${U.esc(u.role)}</span>${u.mustChange ? ' <span class="badge amber">default pwd</span>' : ''}</td>
+      <td>${roleBadge(u.role)}${u.mustChange ? ' <span class="badge amber">default pwd</span>' : ''}</td>
+      <td>${gr}</td>
       <td class="t-right">
-        <button class="btn sm" data-reset="${U.esc(u.username)}">Reset password</button>
-        <button class="btn sm" data-role="${U.esc(u.username)}">${u.role === 'admin' ? 'Make account' : 'Make admin'}</button>
+        <select class="sel-inline" data-roleselect="${U.esc(u.username)}">
+          <option value="account"${u.role === 'account' ? ' selected' : ''}>Account</option>
+          <option value="teacher"${u.role === 'teacher' ? ' selected' : ''}>Teacher</option>
+          <option value="admin"${u.role === 'admin' ? ' selected' : ''}>Admin</option>
+        </select>
+        ${isT ? `<button class="btn sm" data-grades="${U.esc(u.username)}">Classes</button>` : ''}
+        <button class="btn sm" data-reset="${U.esc(u.username)}">Reset pwd</button>
         <button class="btn sm danger" data-del="${U.esc(u.username)}">Delete</button>
-      </td></tr>`).join('');
+      </td></tr>`;
+    }).join('');
     const nAdmin = Store.users.filter(u => u.role === 'admin').length;
     const nAcct = Store.users.filter(u => u.role === 'account').length;
-    const nDefault = Store.users.filter(u => u.mustChange).length;
+    const nTeach = Store.users.filter(u => u.role === 'teacher').length;
     view().innerHTML = `
-      <div class="page-head"><div><h1>Users &amp; Access</h1><p>Admins see everything; accounts can record payments and view students' pending fees</p></div>
+      <div class="page-head"><div><h1>Users &amp; Access</h1><p>Admins see everything · accounts handle fees · teachers handle attendance &amp; report cards only</p></div>
         <button class="btn primary" id="addUser">＋ Add user</button></div>
       <div class="cards">
         ${kpi('Total Users', Store.users.length, { accent: 'blue' })}
         ${kpi('Admins', nAdmin, { accent: 'green' })}
         ${kpi('Accounts', nAcct, { accent: 'amber' })}
-        ${kpi('Default Passwords', nDefault, { accent: nDefault ? 'red' : 'green', sub: nDefault ? 'change these!' : 'all changed' })}
+        ${kpi('Teachers', nTeach, { accent: 'blue' })}
       </div>
       <div class="panel"><div class="panel-head"><h2>User Accounts</h2></div><div class="table-scroll"><table>
-        <thead><tr><th>User</th><th>Role</th><th class="t-right">Actions</th></tr></thead><tbody>${rows}</tbody></table></div></div>
+        <thead><tr><th>User</th><th>Role</th><th>Class(es)</th><th class="t-right">Actions</th></tr></thead><tbody>${rows}</tbody></table></div></div>
       <div class="panel"><div class="panel-body pad">
-        <p class="muted" style="margin:0"><b>Note on security:</b> this login runs in the browser, so it's an access convenience for staff on shared devices — not server‑grade protection. For a public deploy, also set the <code>APP_PASSWORD</code> environment variable (site‑wide gate) and, for true multi‑user security, use the backend option.</p>
+        <p class="muted" style="margin:0"><b>Teachers</b> can only open <b>Attendance</b> and <b>Report Cards</b> for the class(es) you assign — they never see fees, collections or reports. <b>Note on security:</b> this login runs in the browser, so it's an access convenience for staff on shared devices — not server‑grade protection. For a public deploy, also set the <code>APP_PASSWORD</code> environment variable.</p>
       </div></div>`;
     $('#addUser').onclick = () => userModal();
     $$('[data-reset]').forEach(b => b.onclick = () => resetPwModal(b.dataset.reset));
-    $$('[data-role]').forEach(b => b.onclick = async () => {
-      const u = Store.getUser(b.dataset.role);
-      await Store.updateUserRole(u.username, u.role === 'admin' ? 'account' : 'admin');
-      U.toast('Role updated', 'success'); users();
+    $$('[data-grades]').forEach(b => b.onclick = () => gradeAssignModal(b.dataset.grades));
+    $$('[data-roleselect]').forEach(sel => sel.onchange = async () => {
+      const u = Store.getUser(sel.dataset.roleselect);
+      const newRole = sel.value;
+      await Store.updateUserRole(u.username, newRole);
+      U.toast('Role updated', 'success');
+      if (newRole === 'teacher' && (!u.grades || !u.grades.length)) gradeAssignModal(u.username);
+      else users();
     });
     $$('[data-del]').forEach(b => b.onclick = async () => {
       if (!confirm('Delete user "' + b.dataset.del + '"?')) return;
@@ -2433,15 +2581,50 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     });
   }
 
+  // checkbox list of grades → assign to a teacher
+  function gradeCheckboxes(selected) {
+    const sel = selected || [];
+    return Store.gradeList().map(g =>
+      `<label class="chk-inline"><input type="checkbox" value="${U.esc(g)}"${sel.indexOf(g) >= 0 ? ' checked' : ''}/> ${U.esc(g)}</label>`
+    ).join('') || '<span class="muted">No grades found in the student roster yet.</span>';
+  }
+  function gradeAssignModal(username) {
+    const u = Store.getUser(username); if (!u) return;
+    const root = document.getElementById('modalRoot');
+    root.innerHTML = `
+      <div class="modal-backdrop" id="gBackdrop"><div class="modal">
+        <div class="modal-head"><h3>Assign class(es) — ${U.esc(u.name || u.username)}</h3><button class="x-close" id="gClose">&times;</button></div>
+        <div class="modal-body">
+          <p class="muted">Tick the class(es) this teacher is responsible for. They'll see attendance &amp; report cards for these students only.</p>
+          <div class="chk-grid" id="gGrades">${gradeCheckboxes(u.grades)}</div>
+        </div>
+        <div class="modal-foot"><button class="btn" id="gCancel">Cancel</button><button class="btn primary" id="gSave">Save classes</button></div>
+      </div></div>`;
+    const close = () => { root.innerHTML = ''; };
+    $('#gClose', root).onclick = close; $('#gCancel', root).onclick = close;
+    $('#gBackdrop', root).onclick = e => { if (e.target.id === 'gBackdrop') close(); };
+    $('#gSave', root).onclick = async () => {
+      const grades = $$('#gGrades input:checked', root).map(c => c.value);
+      await Store.setUserGrades(username, grades);
+      close(); U.toast('Classes assigned', 'success'); users();
+    };
+  }
+
   function userModal() {
     const root = document.getElementById('modalRoot');
     root.innerHTML = `
       <div class="modal-backdrop" id="uBackdrop"><div class="modal">
         <div class="modal-head"><h3>Add user</h3><button class="x-close" id="uClose">&times;</button></div>
         <div class="modal-body">
-          <div class="field"><label>Full name</label><input id="uName" placeholder="e.g. Account 3"/></div>
-          <div class="field"><label>Username</label><input id="uUser" placeholder="e.g. account3"/></div>
-          <div class="field"><label>Role</label><select id="uRole"><option value="account">Account (data entry)</option><option value="admin">Admin (full access)</option></select></div>
+          <div class="field"><label>Full name</label><input id="uName" placeholder="e.g. Mrs. Priya (Grade 3 teacher)"/></div>
+          <div class="field"><label>Username</label><input id="uUser" placeholder="e.g. teacher_g3"/></div>
+          <div class="field"><label>Role</label><select id="uRole">
+            <option value="account">Account (fees data entry)</option>
+            <option value="teacher">Teacher (attendance &amp; report cards)</option>
+            <option value="admin">Admin (full access)</option>
+          </select></div>
+          <div class="field hidden" id="uGradesField"><label>Class(es) this teacher handles</label>
+            <div class="chk-grid" id="uGrades">${gradeCheckboxes([])}</div></div>
           <div class="field"><label>Password</label><input id="uPass" type="text" placeholder="min 4 characters"/></div>
         </div>
         <div class="modal-foot"><button class="btn" id="uCancel">Cancel</button><button class="btn primary" id="uSave">Create user</button></div>
@@ -2449,9 +2632,12 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     const close = () => { root.innerHTML = ''; };
     $('#uClose', root).onclick = close; $('#uCancel', root).onclick = close;
     $('#uBackdrop', root).onclick = e => { if (e.target.id === 'uBackdrop') close(); };
+    $('#uRole', root).onchange = () => { $('#uGradesField', root).classList.toggle('hidden', $('#uRole', root).value !== 'teacher'); };
     $('#uSave', root).onclick = async () => {
       try {
-        await Store.addUser({ name: $('#uName', root).value, username: $('#uUser', root).value, role: $('#uRole', root).value, password: $('#uPass', root).value });
+        const role = $('#uRole', root).value;
+        const grades = role === 'teacher' ? $$('#uGrades input:checked', root).map(c => c.value) : undefined;
+        await Store.addUser({ name: $('#uName', root).value, username: $('#uUser', root).value, role, password: $('#uPass', root).value, grades });
         close(); U.toast('User created', 'success'); users();
       } catch (e) { U.toast(e.message, 'error'); }
     };
@@ -2606,7 +2792,351 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     })();
   }
 
-  w.Views = { dashboard, students, studentDetail, businessDashboard, collect, collections, reports, users, data, openPaymentModal, changePassword };
+  /* ==================================================================
+     TEACHER MODULE — Attendance, Report Cards (marks) & Academics
+     ================================================================== */
+
+  // grades the current user may work with (admin = all; teacher = assigned)
+  function myGrades() {
+    const u = Store.currentUser || {};
+    if (u.role === 'admin') return Store.gradeList();
+    return Array.isArray(u.grades) ? u.grades.filter(Boolean) : [];
+  }
+  const GRADE_COLORS = { EX: '#16a34a', GD: '#2563eb', SA: '#d97706', NI: '#dc2626' };
+  function lastDates(n) {
+    const out = [], d = new Date();
+    for (let i = n - 1; i >= 0; i--) { const dd = new Date(d); dd.setDate(d.getDate() - i); out.push(dd.toISOString().slice(0, 10)); }
+    return out;
+  }
+  function absentText(s, date) {
+    const school = (Store.meta && Store.meta.school) || 'AKB School of Excellence';
+    return 'Dear Parent, this is to inform you that ' + s.name + (s.grade ? ' (' + s.grade + ')' : '') +
+      ' was marked ABSENT today (' + U.fmtDate(date) + ') at ' + school +
+      '. If this is unexpected, kindly contact the school. Please ensure regular attendance. Thank you.';
+  }
+
+  /* -------------------------------------------------- Attendance */
+  let attState = { date: '', grade: '' };
+  function attendance() {
+    const grades = myGrades();
+    if (!attState.date) attState.date = U.todayISO();
+    if (!attState.grade || grades.indexOf(attState.grade) < 0) attState.grade = grades[0] || '';
+    const isAdmin = Store.isAdmin();
+
+    if (!grades.length) {
+      view().innerHTML = `<div class="page-head"><div><h1>Attendance</h1></div></div>
+        <div class="panel"><div class="panel-body pad"><div class="empty">No class has been assigned to you yet. Please ask the administrator to assign your class under <b>Users &amp; Access</b>.</div></div></div>`;
+      return;
+    }
+
+    const gradeOpts = grades.map(g => `<option value="${U.esc(g)}"${attState.grade === g ? ' selected' : ''}>${U.esc(g)}</option>`).join('');
+    const roster = Store.students.filter(s => s.grade === attState.grade)
+      .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    const day = Store.getAttendance(attState.date);
+    let present = 0, absent = 0, unmarked = 0;
+    roster.forEach(s => { const v = day[s.id]; if (v === 'P') present++; else if (v === 'A') absent++; else unmarked++; });
+
+    const rows = roster.map(s => {
+      const v = day[s.id] || '';
+      const wa = (v === 'A' && s.contact)
+        ? `<a class="btn sm wa" target="_blank" rel="noopener" href="${U.waLink(s.contact, absentText(s, attState.date))}" title="WhatsApp absent notice to parent">💬 Notify</a>`
+        : (v === 'A' && !s.contact ? '<span class="muted" style="font-size:11px">no mobile</span>' : '');
+      return `<tr class="${v === 'A' ? 'row-absent' : ''}">
+        <td><b>${U.esc(s.name)}</b><div class="muted" style="font-size:11px">${U.esc(s.id)}${s.contact ? ' · ' + U.esc(s.contact) : ''}</div></td>
+        <td class="t-center">
+          <div class="att-toggle">
+            <button class="att-btn p ${v === 'P' ? 'on' : ''}" data-att="P" data-id="${U.esc(s.id)}">Present</button>
+            <button class="att-btn a ${v === 'A' ? 'on' : ''}" data-att="A" data-id="${U.esc(s.id)}">Absent</button>
+          </div>
+        </td>
+        <td class="t-right">${wa}</td></tr>`;
+    }).join('') || '<tr><td colspan="3" class="empty">No students in this class.</td></tr>';
+
+    view().innerHTML = `
+      <div class="page-head">
+        <div><h1>Attendance</h1><p>Mark each student, then WhatsApp the parents of absentees</p></div>
+      </div>
+      <div class="panel"><div class="panel-head">
+        <div class="toolbar">
+          <label class="fld"><span>Date</span><input type="date" id="attDate" value="${attState.date}" max="${U.todayISO()}"/></label>
+          <label class="fld"><span>Class</span><select id="attGrade">${gradeOpts}</select></label>
+          <button class="btn" id="attAllPresent">✔ Mark all present</button>
+        </div>
+        <span class="muted">${U.fmtDate(attState.date)}</span>
+      </div>
+      <div class="cards" style="margin:12px">
+        ${kpi('Students', roster.length, { accent: 'blue' })}
+        ${kpi('Present', present, { accent: 'green' })}
+        ${kpi('Absent', absent, { accent: 'red' })}
+        ${kpi('Not marked', unmarked, { accent: unmarked ? 'amber' : 'green' })}
+      </div>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Student</th><th class="t-center">Attendance</th><th class="t-right">Absent action</th></tr></thead>
+        <tbody>${rows}</tbody></table></div></div>
+      ${isAdmin ? adminAbsenteePanel(attState.date) : ''}`;
+
+    $('#attDate').onchange = e => { attState.date = e.target.value || U.todayISO(); attendance(); };
+    $('#attGrade').onchange = e => { attState.grade = e.target.value; attendance(); };
+    $('#attAllPresent').onclick = async () => { await Store.markAllPresent(attState.date, attState.grade); U.toast('All marked present', 'success'); attendance(); };
+    $$('[data-att]').forEach(b => b.onclick = async () => {
+      await Store.setAttendance(attState.date, b.dataset.id, b.dataset.att);
+      attendance();
+    });
+  }
+  // admin: absentees across ALL grades for the date
+  function adminAbsenteePanel(date) {
+    const abs = Store.absenteesOn(date).sort((a, b) => String(a.grade).localeCompare(String(b.grade)) || String(a.name).localeCompare(String(b.name)));
+    const rows = abs.map(s => `<tr>
+      <td>${U.esc(s.grade || '—')}</td>
+      <td><b>${U.esc(s.name)}</b></td>
+      <td>${U.esc(s.contact || '—')}</td>
+      <td class="t-right">${s.contact ? `<a class="btn sm wa" target="_blank" rel="noopener" href="${U.waLink(s.contact, absentText(s, date))}">💬 Notify</a>` : ''}</td>
+    </tr>`).join('') || '<tr><td colspan="4" class="empty">No students marked absent for this date. 🎉</td></tr>';
+    return `<div class="panel"><div class="panel-head"><h2>Daily Absentee Report — All Classes</h2><span class="muted">${U.fmtDate(date)}</span></div>
+      <div class="table-scroll"><table><thead><tr><th>Class</th><th>Student</th><th>Parent mobile</th><th class="t-right">Action</th></tr></thead>
+      <tbody>${rows}</tbody></table></div></div>`;
+  }
+
+  /* -------------------------------------------------- Report Cards (marks) */
+  let markState = { grade: '', studentId: '' };
+  function reportKeysFor(grade) {
+    // returns [{key,label,group}] rows for the marks grid
+    if (Store.isKG(grade)) {
+      const out = [];
+      Store.REPORT.KG_DOMAINS.forEach((d, di) => d.items.forEach((it, ii) => out.push({ key: 'K:' + di + ':' + ii, label: it, group: d.title })));
+      return out;
+    }
+    return Store.REPORT.SUBJECTS.map(s => ({ key: 'S:' + s, label: s, group: 'Subjects' }));
+  }
+  function marks() {
+    const grades = myGrades();
+    if (!grades.length) {
+      view().innerHTML = `<div class="page-head"><div><h1>Report Cards</h1></div></div>
+        <div class="panel"><div class="panel-body pad"><div class="empty">No class assigned yet. Ask the administrator to assign your class under <b>Users &amp; Access</b>.</div></div></div>`;
+      return;
+    }
+    if (!markState.grade || grades.indexOf(markState.grade) < 0) { markState.grade = grades[0]; markState.studentId = ''; }
+    const roster = Store.students.filter(s => s.grade === markState.grade).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    if (!markState.studentId || !roster.find(s => s.id === markState.studentId)) markState.studentId = roster[0] ? roster[0].id : '';
+    const student = roster.find(s => s.id === markState.studentId);
+    const kg = Store.isKG(markState.grade);
+
+    const gradeOpts = grades.map(g => `<option value="${U.esc(g)}"${markState.grade === g ? ' selected' : ''}>${U.esc(g)}</option>`).join('');
+    const stuOpts = roster.map(s => `<option value="${U.esc(s.id)}"${markState.studentId === s.id ? ' selected' : ''}>${U.esc(s.name)}</option>`).join('')
+      || '<option value="">No students</option>';
+
+    let gridHtml = '<div class="empty">No student selected.</div>';
+    if (student) {
+      const report = student.report || {}; const marksData = report.marks || {};
+      const rowsCfg = reportKeysFor(markState.grade);
+      const optCells = code => Store.REPORT.GRADE_SCALE.map(g => `<option value="${g.code}"${code === g.code ? ' selected' : ''}>${g.code}</option>`).join('');
+      let body = '', lastGroup = null;
+      rowsCfg.forEach(r => {
+        if (r.group !== lastGroup) { body += `<tr class="grp-row"><td colspan="${1 + Store.REPORT.ASSESSMENTS.length}">${U.esc(r.group)}</td></tr>`; lastGroup = r.group; }
+        const cell = marksData[r.key] || {};
+        const tds = Store.REPORT.ASSESSMENTS.map(a =>
+          `<td class="t-center"><select class="mk-sel" data-key="${U.esc(r.key)}" data-as="${a.key}"><option value="">–</option>${optCells(cell[a.key] || '')}</select></td>`
+        ).join('');
+        body += `<tr><td>${U.esc(r.label)}</td>${tds}</tr>`;
+      });
+      const asHead = Store.REPORT.ASSESSMENTS.map(a => `<th class="t-center">${U.esc(a.label)}</th>`).join('');
+      gridHtml = `
+        <div class="scale-legend">${Store.REPORT.GRADE_SCALE.map(g => `<span><b style="color:${GRADE_COLORS[g.code]}">${g.code}</b> ${U.esc(g.label)}</span>`).join('')}</div>
+        <div class="table-scroll"><table class="marks-grid">
+          <thead><tr><th>${kg ? 'Skill / Ability' : 'Subject'}</th>${asHead}</tr></thead>
+          <tbody>${body}</tbody></table></div>
+        <div class="field mt"><label>Class teacher's remarks</label><textarea id="mkRemarks" rows="2" placeholder="Overall remarks for the report card…">${U.esc(report.remarks || '')}</textarea></div>
+        <div class="flex gap wrap mt">
+          <button class="btn primary" id="mkSave">💾 Save report card</button>
+          <button class="btn" id="mkPrint">🖨️ Preview / Print report card</button>
+          ${student.reportUpdatedAt ? `<span class="muted" style="align-self:center">Last saved ${U.fmtDate(student.reportUpdatedAt.slice(0, 10))}</span>` : ''}
+        </div>`;
+    }
+
+    view().innerHTML = `
+      <div class="page-head"><div><h1>Report Cards</h1><p>Enter recent assessment grades for each student — as per the AKB report card</p></div></div>
+      <div class="panel"><div class="panel-head">
+        <div class="toolbar">
+          <label class="fld"><span>Class</span><select id="mkGrade">${gradeOpts}</select></label>
+          <label class="fld"><span>Student</span><select id="mkStudent">${stuOpts}</select></label>
+        </div>
+        <span class="muted">${kg ? 'Skill-based checklist' : 'Grades 1–9 subjects'}</span>
+      </div><div class="panel-body pad">${gridHtml}</div></div>`;
+
+    $('#mkGrade').onchange = e => { markState.grade = e.target.value; markState.studentId = ''; marks(); };
+    $('#mkStudent').onchange = e => { markState.studentId = e.target.value; marks(); };
+    const save = $('#mkSave');
+    if (save) save.onclick = async () => {
+      const marksData = {};
+      $$('.mk-sel').forEach(sel => {
+        const k = sel.dataset.key, a = sel.dataset.as, v = sel.value;
+        if (!v) return; (marksData[k] = marksData[k] || {})[a] = v;
+      });
+      await Store.saveStudentReport(student.id, { marks: marksData, remarks: $('#mkRemarks').value.trim() });
+      U.toast('Report card saved', 'success'); marks();
+    };
+    const pr = $('#mkPrint'); if (pr) pr.onclick = () => printReportCard(student);
+  }
+
+  // printable report card (AKB format)
+  function printReportCard(s) {
+    const kg = Store.isKG(s.grade);
+    const report = s.report || {}; const marksData = report.marks || {};
+    const rowsCfg = reportKeysFor(s.grade);
+    const asHead = Store.REPORT.ASSESSMENTS.map(a => `<th>${U.esc(a.label)}</th>`).join('');
+    let body = '', lastGroup = null;
+    rowsCfg.forEach(r => {
+      if (kg && r.group !== lastGroup) { body += `<tr class="grp"><td colspan="${1 + Store.REPORT.ASSESSMENTS.length}">${U.esc(r.group)}</td></tr>`; lastGroup = r.group; }
+      const cell = marksData[r.key] || {};
+      const tds = Store.REPORT.ASSESSMENTS.map(a => { const v = cell[a.key] || ''; return `<td style="text-align:center;font-weight:700;color:${GRADE_COLORS[v] || '#334155'}">${U.esc(v)}</td>`; }).join('');
+      body += `<tr><td>${U.esc(r.label)}</td>${tds}</tr>`;
+    });
+    const school = (Store.meta && Store.meta.school) || 'AKB School of Excellence';
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Report Card — ${U.esc(s.name)}</title>
+      <style>
+        body{font-family:Arial,Helvetica,sans-serif;color:#1e293b;margin:24px}
+        .rc-head{display:flex;align-items:center;gap:14px;border-bottom:3px solid #1d4ed8;padding-bottom:10px}
+        .rc-head img{height:64px}
+        .rc-head h1{margin:0;font-size:20px;color:#1d4ed8}
+        .rc-head p{margin:2px 0;font-size:12px;color:#475569}
+        .meta{display:flex;gap:24px;flex-wrap:wrap;margin:14px 0;font-size:13px}
+        .meta b{color:#0f172a}
+        table{width:100%;border-collapse:collapse;font-size:12px}
+        th,td{border:1px solid #cbd5e1;padding:6px 8px}
+        th{background:#eff6ff;text-align:left}
+        tr.grp td{background:#f1f5f9;font-weight:700}
+        .scale{margin:12px 0;font-size:11px;color:#475569}
+        .scale b{margin-right:2px}
+        .remarks{margin-top:14px;font-size:13px}
+        .sign{margin-top:40px;display:flex;justify-content:space-between;font-size:12px}
+        @media print{ .noprint{display:none} }
+      </style></head><body>
+      <div class="rc-head"><img src="${location.origin + location.pathname.replace(/[^/]*$/, '')}data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAgMTIwIiByb2xlPSJpbWciIGFyaWEtbGFiZWw9IkFLQiBTY2hvb2wgb2YgRXhjZWxsZW5jZSI+CiAgPGRlZnM+PHN0eWxlPi5te2ZpbGw6IzdhMTQyMH0uY3tmaWxsOiNmNmVlZGF9LmJ7ZmlsbDojMjI0MDlhfTwvc3R5bGU+PC9kZWZzPgogIDwhLS0gY3Jvd24gLS0+CiAgPGcgY2xhc3M9Im0iPgogICAgPHBhdGggZD0iTTQ1IDMxIEw0MCAxNSBMNTAgMjIgTDYwIDkgTDcwIDIyIEw4MCAxNSBMNzUgMzEgWiIvPgogICAgPGNpcmNsZSBjeD0iNjAiIGN5PSI2IiByPSIzIi8+PGNpcmNsZSBjeD0iNDAiIGN5PSIxMiIgcj0iMi40Ii8+PGNpcmNsZSBjeD0iODAiIGN5PSIxMiIgcj0iMi40Ii8+CiAgPC9nPgogIDwhLS0gc2hpZWxkOiBtYXJvb24gYm9yZGVyICsgY3JlYW0gaW50ZXJpb3IgLS0+CiAgPHBhdGggZD0iTTMzIDMzIEg4NyBWNjQgQzg3IDg0IDc1IDk1IDYwIDEwMSBDNDUgOTUgMzMgODQgMzMgNjQgWiIgY2xhc3M9Im0iLz4KICA8cGF0aCBkPSJNMzggMzggSDgyIFY2MyBDODIgODAgNzIgODkgNjAgOTUgQzQ4IDg5IDM4IDgwIDM4IDYzIFoiIGNsYXNzPSJjIi8+CiAgPCEtLSBBS0IgLS0+CiAgPHRleHQgeD0iNjAiIHk9IjY1IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0iR2VvcmdpYSwnVGltZXMgTmV3IFJvbWFuJyxzZXJpZiIgZm9udC13ZWlnaHQ9IjgwMCIgZm9udC1zaXplPSIyMyIgY2xhc3M9Im0iIGxldHRlci1zcGFjaW5nPSItMSI+QUtCPC90ZXh0PgogIDwhLS0gc3RhcnMgLS0+CiAgPHRleHQgeD0iNjAiIHk9Ijc1IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjcuNSIgY2xhc3M9ImIiIGxldHRlci1zcGFjaW5nPSIxLjUiPiYjOTczMzsmIzk3MzM7JiM5NzMzOyYjOTczMzsmIzk3MzM7PC90ZXh0PgogIDwhLS0gb3BlbiBib29rIC0tPgogIDxnPgogICAgPHBhdGggZD0iTTQ5IDgwIEM1MyA3NyA1NyA3NyA2MCA3OSBDNjMgNzcgNjcgNzcgNzEgODAgTDcxIDkxIEM2NyA4OCA2MyA4OCA2MCA5MCBDNTcgODggNTMgODggNDkgOTEgWiIgY2xhc3M9Im0iLz4KICAgIDxsaW5lIHgxPSI2MCIgeTE9Ijc5IiB4Mj0iNjAiIHkyPSI5MCIgc3Ryb2tlPSIjZjZlZWRhIiBzdHJva2Utd2lkdGg9IjEuMiIvPgogIDwvZz4KICA8IS0tIGJsdWUgZmxvdXJpc2hlcyAtLT4KICA8ZyBmaWxsPSJub25lIiBzdHJva2U9IiMyMjQwOWEiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIj4KICAgIDxwYXRoIGQ9Ik0zMiA2NiBDMjIgNjAgMTUgNjMgMTEgNzEgQzE3IDY3IDIzIDY4IDI3IDczIEMyOSA2OSAzMSA2OCAzMyA2OSIvPgogICAgPHBhdGggZD0iTTg4IDY2IEM5OCA2MCAxMDUgNjMgMTA5IDcxIEMxMDMgNjcgOTcgNjggOTMgNzMgQzkxIDY5IDg5IDY4IDg3IDY5Ii8+CiAgPC9nPgo8L3N2Zz4K" alt=""/>
+        <div><h1>${U.esc(school)}</h1><p>Student Progress Report — Academic Year ${U.esc(Store.meta.year || '')}</p></div></div>
+      <div class="meta"><span><b>Name:</b> ${U.esc(s.name)}</span><span><b>Class:</b> ${U.esc(s.grade || '')}</span><span><b>ID:</b> ${U.esc(s.id)}</span>${s.father ? `<span><b>Parent:</b> ${U.esc(s.father)}</span>` : ''}</div>
+      <table><thead><tr><th>${kg ? 'Skill / Ability' : 'Subject'}</th>${asHead}</tr></thead><tbody>${body}</tbody></table>
+      <div class="scale"><b>Grading:</b> ${Store.REPORT.GRADE_SCALE.map(g => g.code + ' = ' + g.label).join(' &nbsp;·&nbsp; ')}</div>
+      ${report.remarks ? `<div class="remarks"><b>Class teacher's remarks:</b> ${U.esc(report.remarks)}</div>` : ''}
+      <div class="sign"><span>Class Teacher</span><span>Principal / Chairman</span></div>
+      <div class="noprint" style="margin-top:24px"><button onclick="window.print()">Print</button></div>
+      </body></html>`;
+    const wdw = window.open('', '_blank');
+    if (!wdw) { U.toast('Please allow pop-ups to print', 'error'); return; }
+    wdw.document.write(html); wdw.document.close();
+  }
+
+  /* -------------------------------------------------- Academics dashboard (admin/chairman) */
+  function hasReport(s) {
+    const m = s.report && s.report.marks; if (!m) return false;
+    return Object.keys(m).some(k => Object.keys(m[k] || {}).some(a => m[k][a]));
+  }
+  // horizontal bar chart: items=[{label,value,color,sub}]
+  function hbars(items, opts) {
+    opts = opts || {};
+    const max = Math.max(1, ...items.map(i => i.value));
+    return `<div class="hbars">` + items.map(i => `
+      <div class="hbar-row"><div class="hbar-lbl">${U.esc(i.label)}</div>
+        <div class="hbar-track"><span style="width:${Math.round(i.value / max * 100)}%;background:${i.color || '#2563eb'}"></span></div>
+        <div class="hbar-val">${opts.pct ? i.value + '%' : U.inum(i.value)}${i.sub ? ' <span class="muted">' + i.sub + '</span>' : ''}</div></div>`).join('') + `</div>`;
+  }
+  // donut chart: segments=[{label,value,color}]
+  function donut(segments) {
+    const total = segments.reduce((a, s) => a + s.value, 0) || 1;
+    const R = 60, C = 2 * Math.PI * R; let off = 0;
+    const rings = segments.map(s => {
+      const frac = s.value / total, len = frac * C;
+      const el = `<circle r="${R}" cx="80" cy="80" fill="none" stroke="${s.color}" stroke-width="26"
+        stroke-dasharray="${len} ${C - len}" stroke-dashoffset="${-off}" transform="rotate(-90 80 80)"><title>${U.esc(s.label)}: ${s.value}</title></circle>`;
+      off += len; return el;
+    }).join('');
+    const legend = segments.map(s => `<span><i style="background:${s.color}"></i>${U.esc(s.label)} <b>${s.value}</b> (${Math.round(s.value / total * 100)}%)</span>`).join('');
+    return `<div class="donut-wrap"><svg viewBox="0 0 160 160" width="160" height="160">
+      <circle r="${R}" cx="80" cy="80" fill="none" stroke="#eef2f7" stroke-width="26"/>${rings}
+      <text x="80" y="76" text-anchor="middle" font-size="22" font-weight="700" fill="#0f172a">${total}</text>
+      <text x="80" y="96" text-anchor="middle" font-size="10" fill="#64748b">grades</text></svg>
+      <div class="donut-legend">${legend}</div></div>`;
+  }
+  // line chart of daily present% : points=[{label,value|null}]
+  function lineChart(points) {
+    const W = 720, H = 200, padL = 34, padB = 30, padT = 12, padR = 10;
+    const n = points.length, iw = (W - padL - padR);
+    const x = i => padL + (n <= 1 ? iw / 2 : iw * i / (n - 1));
+    const y = v => padT + (H - padT - padB) * (1 - v / 100);
+    let grid = '';
+    for (let t = 0; t <= 4; t++) { const val = 25 * t, yy = y(val); grid += `<line x1="${padL}" y1="${yy}" x2="${W - padR}" y2="${yy}" stroke="#eef2f7"/><text x="${padL - 6}" y="${yy + 3}" text-anchor="end" font-size="9" fill="#94a3b8">${val}%</text>`; }
+    const pts = points.map((p, i) => p.value == null ? null : [x(i), y(p.value)]);
+    let path = '', dots = '', prev = null;
+    pts.forEach((p, i) => {
+      if (p) { path += (prev ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1) + ' '; prev = p; dots += `<circle cx="${p[0]}" cy="${p[1]}" r="3.5" fill="#1d4ed8"><title>${U.esc(points[i].label)}: ${points[i].value}%</title></circle>`; }
+    });
+    const labels = points.map((p, i) => `<text x="${x(i)}" y="${H - padB + 14}" text-anchor="middle" font-size="9" fill="#475569">${U.esc(p.label)}</text>`).join('');
+    return `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet">${grid}
+      <path d="${path}" fill="none" stroke="#1d4ed8" stroke-width="2.5"/>${dots}
+      <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="#cbd5e1"/>${labels}</svg>`;
+  }
+
+  function academics() {
+    const students = Store.students;
+    const grades = Store.gradeList();
+    const withReport = students.filter(hasReport);
+    const today = U.todayISO();
+
+    // grade-scale distribution across all entered marks
+    const scaleCount = { EX: 0, GD: 0, SA: 0, NI: 0 };
+    students.forEach(s => { const m = (s.report && s.report.marks) || {}; Object.keys(m).forEach(k => Object.keys(m[k]).forEach(a => { const v = m[k][a]; if (scaleCount[v] != null) scaleCount[v]++; })); });
+    const totalMarks = scaleCount.EX + scaleCount.GD + scaleCount.SA + scaleCount.NI;
+    const segs = Store.REPORT.GRADE_SCALE.map(g => ({ label: g.code, value: scaleCount[g.code], color: GRADE_COLORS[g.code] }));
+
+    // attendance today
+    const day = Store.getAttendance(today);
+    let present = 0, absent = 0; students.forEach(s => { if (day[s.id] === 'P') present++; else if (day[s.id] === 'A') absent++; });
+    const marked = present + absent;
+    const presentPct = marked ? Math.round(present / marked * 100) : 0;
+
+    // 7-day attendance trend
+    const days = lastDates(7).map(d => {
+      const dd = Store.getAttendance(d); let p = 0, a = 0;
+      students.forEach(s => { if (dd[s.id] === 'P') p++; else if (dd[s.id] === 'A') a++; });
+      return { label: d.slice(5), value: (p + a) ? Math.round(p / (p + a) * 100) : null };
+    });
+
+    // per-grade report completion
+    const gradeBars = grades.map(g => {
+      const inG = students.filter(s => s.grade === g);
+      const done = inG.filter(hasReport).length;
+      return { label: g, value: inG.length ? Math.round(done / inG.length * 100) : 0, color: '#2563eb', sub: done + '/' + inG.length };
+    });
+
+    // per-grade absentees today
+    const absToday = Store.absenteesOn(today);
+
+    view().innerHTML = `
+      <div class="page-head"><div><h1>Academics Dashboard</h1><p>Report cards &amp; attendance overview — ${U.esc(Store.meta.school || 'AKB School')}</p></div>
+        <div class="flex gap"><a class="btn" href="#/attendance">📝 Attendance</a><a class="btn" href="#/marks">📚 Report Cards</a></div></div>
+      <div class="cards">
+        ${kpi('Students', students.length, { accent: 'blue' })}
+        ${kpi('Report cards started', withReport.length, { accent: 'green', sub: (students.length ? Math.round(withReport.length / students.length * 100) : 0) + '% of students' })}
+        ${kpi('Present today', present, { accent: 'green', sub: presentPct + '% of ' + marked + ' marked' })}
+        ${kpi('Absent today', absent, { accent: absent ? 'red' : 'green', sub: absToday.length + ' across school' })}
+      </div>
+      <div class="grid-2">
+        <div class="panel"><div class="panel-head"><h2>Overall Grade Distribution</h2><span class="muted">${totalMarks} grades entered</span></div>
+          <div class="panel-body pad">${totalMarks ? donut(segs) : '<div class="empty">No report-card grades entered yet.</div>'}</div></div>
+        <div class="panel"><div class="panel-head"><h2>Attendance Trend (7 days)</h2><span class="muted">% present</span></div>
+          <div class="panel-body pad">${lineChart(days)}</div></div>
+      </div>
+      <div class="panel"><div class="panel-head"><h2>Report Card Completion by Class</h2><span class="muted">% of students entered</span></div>
+        <div class="panel-body pad">${gradeBars.length ? hbars(gradeBars, { pct: true }) : '<div class="empty">No classes yet.</div>'}</div></div>
+      <div class="panel"><div class="panel-head"><h2>Absentees Today</h2><span class="muted">${U.fmtDate(today)}</span></div>
+        <div class="table-scroll"><table><thead><tr><th>Class</th><th>Student</th><th>Parent mobile</th><th class="t-right">Notify</th></tr></thead>
+        <tbody>${absToday.length ? absToday.sort((a, b) => String(a.grade).localeCompare(String(b.grade))).map(s => `<tr>
+          <td>${U.esc(s.grade || '—')}</td><td><b>${U.esc(s.name)}</b></td><td>${U.esc(s.contact || '—')}</td>
+          <td class="t-right">${s.contact ? `<a class="btn sm wa" target="_blank" rel="noopener" href="${U.waLink(s.contact, absentText(s, today))}">💬</a>` : ''}</td></tr>`).join('')
+        : '<tr><td colspan="4" class="empty">No absentees recorded today. 🎉</td></tr>'}</tbody></table></div></div>`;
+    bindNav();
+  }
+
+  w.Views = { dashboard, students, studentDetail, businessDashboard, collect, collections, reports, attendance, marks, academics, users, data, openPaymentModal, changePassword };
 })(window);
 
 </script>
@@ -2618,6 +3148,8 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
   // routes allowed for the "account" role. Accounts share the full admin
   // dashboard/collections/reports; only Users and Data & Backup stay admin-only.
   const ACCOUNT_ROUTES = { dashboard: 1, students: 1, student: 1, collect: 1, business: 1, collections: 1, reports: 1 };
+  // Teachers have NO access to fee matters — only attendance & marks entry.
+  const TEACHER_ROUTES = { attendance: 1, marks: 1 };
 
   const Router = {
     render() { route(); },
@@ -2639,8 +3171,12 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('active', a.dataset.route === routeName));
   }
 
+  function role() { return (Store.currentUser && Store.currentUser.role) || 'account'; }
+  function landing() { return role() === 'teacher' ? 'attendance' : 'dashboard'; }
+
   function allowed(name) {
     if (Store.isAdmin()) return true;
+    if (role() === 'teacher') return !!TEACHER_ROUTES[name];
     return !!ACCOUNT_ROUTES[name];
   }
 
@@ -2648,9 +3184,10 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     const { seg, params } = parseHash();
     let name = seg[0];
     if (!allowed(name)) {
-      // send accounts to their landing page (dashboard)
-      name = 'dashboard';
-      if (location.hash.replace(/^#\/?/, '').split('/')[0] !== 'dashboard') { location.hash = '#/dashboard'; return; }
+      // send the user to their landing page for their role
+      const land = landing();
+      name = land;
+      if (location.hash.replace(/^#\/?/, '').split('/')[0] !== land) { location.hash = '#/' + land; return; }
     }
     try {
       switch (name) {
@@ -2661,9 +3198,12 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
         case 'collect': setActive('collect'); Views.collect(); break;
         case 'collections': setActive('collections'); Views.collections(params); break;
         case 'reports': setActive('reports'); Views.reports(params); break;
+        case 'attendance': setActive('attendance'); Views.attendance(params); break;
+        case 'marks': setActive('marks'); Views.marks(params); break;
+        case 'academics': setActive('academics'); Views.academics(params); break;
         case 'users': setActive('users'); Views.users(); break;
         case 'data': setActive('data'); Views.data(); break;
-        default: location.hash = '#/dashboard';
+        default: location.hash = '#/' + landing();
       }
     } catch (e) {
       console.error(e);
@@ -2678,12 +3218,17 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
 
   function applyRoleUI() {
     const admin = Store.isAdmin();
-    document.querySelectorAll('#nav a[data-admin]').forEach(a => a.classList.toggle('hidden', !admin));
+    const r = role();
+    // data-roles="admin account teacher" — show a nav link only for listed roles
+    document.querySelectorAll('#nav a[data-roles]').forEach(a => {
+      const roles = (a.dataset.roles || '').split(/\s+/).filter(Boolean);
+      a.classList.toggle('hidden', roles.length > 0 && roles.indexOf(r) < 0);
+    });
     const u = Store.currentUser || {};
     document.getElementById('userBox').innerHTML = `
       <div class="user-row">
         <div class="user-ava">${U.esc(U.initials(u.name || u.username || '?'))}</div>
-        <div class="user-meta"><strong>${U.esc(u.name || u.username)}</strong><span class="badge ${admin ? 'blue' : 'gray'}">${U.esc(u.role)}</span></div>
+        <div class="user-meta"><strong>${U.esc(u.name || u.username)}</strong><span class="badge ${admin ? 'blue' : (r === 'teacher' ? 'amber' : 'gray')}">${U.esc(u.role)}</span></div>
       </div>
       <div class="user-actions">
         <button class="btn sm" id="changePw">Password</button>
@@ -2728,8 +3273,8 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       wired = true;
     }
     document.getElementById('yearBadge').textContent = (Store.meta.school || 'AKB School') + ' · ' + (Store.meta.year || '');
-    // both roles land on the dashboard
-    if (!location.hash || location.hash === '#/' ) location.hash = '#/dashboard';
+    // land on the role's home page
+    if (!location.hash || location.hash === '#/' ) location.hash = '#/' + landing();
     route();
   }
 

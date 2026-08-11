@@ -31,12 +31,16 @@ The app opens with a **login screen**. Three users are created on first run:
 
 | Username | Password | Role | Can do |
 |----------|----------|------|--------|
-| `admin` | `admin@123` | **Admin** | Everything — dashboards, per‑student Chairman Dashboard, collections, reports, user management, backup |
+| `admin` | `admin@123` | **Admin** | Everything — dashboards, per‑student Chairman Dashboard, collections, reports, **attendance + report cards + academics dashboard**, user management, backup |
 | `account1` | `account1@123` | Account | Sign in, **record payments**, view each student's **pending fees by category**, edit student inputs |
 | `account2` | `account2@123` | Account | same as account1 |
 
+There is also a **Teacher** role (create teachers on the Users page). A teacher is assigned one or
+more **classes** and can **only** open the **Attendance** and **Report Cards** pages for their own
+students — they never see any fee/collection/report data.
+
 **Change these passwords after first sign‑in** (sidebar → *Password*, or admin → *Users* → *Reset password*).
-Admins can add more users, change roles, and delete users on the **Users** page.
+Admins can add more users, change roles/classes, and delete users on the **Users** page.
 
 > ⚠️ This login runs **in the browser**, so it's an access convenience for staff on shared
 > devices — not server‑grade security. For a public deploy, also set the `APP_PASSWORD`
@@ -55,7 +59,10 @@ Admins can add more users, change roles, and delete users on the **Users** page.
 | **Receive Payment** | All | Record a payment against one or more fee heads → date, mode (Cash/G.Pay/Bank/Cheque/Card), receiving account → auto‑numbered **printable receipt**. |
 | **Collections** | Admin | Date/account/mode filters; daily cash‑vs‑bank summary, by‑account totals, transactions — mirrors `PAYMENT COLLECTION SUMMARY REPO`. |
 | **Reports** | Admin | Fee‑category summary and outstanding‑dues (defaulters), filterable by grade/fee head; CSV export. |
-| **Users** | Admin | Add/remove users, set roles, reset passwords. |
+| **Attendance** | Admin, Teacher | Pick a class + date, tick each student Present/Absent, one‑click **WhatsApp absent notice** to the parent; admin sees a **daily absentee report across all classes**. |
+| **Report Cards** | Admin, Teacher | Enter recent assessment grades (PT1/PT2/Term I/PT3/Term II · EX/GD/SA/NI) — **subjects grid for Grades 1‑9**, **skill checklist across 6 domains for Pre‑KG/JKG/SKG**; teacher remarks; **printable report card**. |
+| **Academics** (Chairman dashboard) | Admin | Report‑card completion by class, overall grade **donut**, 7‑day **attendance trend** line chart, today's absentees — an at‑a‑glance academic overview. |
+| **Users** | Admin | Add/remove users, set roles (admin/account/**teacher**), assign **classes** to teachers, reset passwords. |
 | **Data & Backup** | Admin | Full JSON backup/restore, students CSV, reset to workbook data. |
 
 The 7 fee categories match the Chairman Dashboard: Terms Fees, School Supplies, App Fees Paid,

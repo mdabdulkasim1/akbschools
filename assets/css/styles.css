@@ -79,6 +79,7 @@ tbody tr.clickable{cursor:pointer}
 .num{text-align:right;font-variant-numeric:tabular-nums}
 .table-scroll{overflow:auto;max-height:none}
 .t-right{ text-align:right }
+.t-center{ text-align:center }
 
 /* Badges & pills */
 .badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600}
@@ -213,6 +214,47 @@ h4.sec{margin:18px 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:
 h4.sec:first-child{margin-top:0}
 .fee-head-hdr{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:10px;font-size:11px;text-transform:uppercase;color:var(--muted);font-weight:600;padding:0 0 4px}
 .fee-head-hdr span:not(:first-child){text-align:right}
+
+/* ===== Teacher module: attendance, report cards, academics ===== */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media (max-width:860px){.grid-2{grid-template-columns:1fr}}
+.fld{display:flex;flex-direction:column;gap:4px}
+.fld > span{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.3px}
+.fld input,.fld select{padding:8px 12px;border:1px solid var(--border);border-radius:9px;font-size:13px;background:#fff}
+.sel-inline{padding:4px 8px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:#fff}
+.chk-grid{display:flex;flex-wrap:wrap;gap:8px 16px}
+.chk-inline{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:500;background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer}
+.chk-inline input{margin:0}
+
+/* attendance toggle */
+.att-toggle{display:inline-flex;border:1px solid var(--border);border-radius:9px;overflow:hidden}
+.att-btn{border:none;background:#fff;padding:6px 16px;font-size:13px;font-weight:600;cursor:pointer;color:var(--muted)}
+.att-btn.p.on{background:var(--green);color:#fff}
+.att-btn.a.on{background:var(--red);color:#fff}
+.att-btn:not(.on):hover{background:#f1f5f9}
+.att-btn + .att-btn{border-left:1px solid var(--border)}
+tr.row-absent{background:var(--red-l)}
+
+/* marks grid */
+.marks-grid td,.marks-grid th{padding:6px 8px}
+.marks-grid tr.grp-row td{background:#f1f5f9;font-weight:700;color:#334155;font-size:12px;text-transform:uppercase;letter-spacing:.3px}
+.mk-sel{padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-weight:600;background:#fff;min-width:56px}
+.scale-legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12px;color:var(--muted);margin-bottom:12px}
+.scale-legend b{font-size:13px}
+
+/* horizontal bars */
+.hbars{display:flex;flex-direction:column;gap:10px}
+.hbar-row{display:grid;grid-template-columns:120px 1fr 90px;align-items:center;gap:12px}
+.hbar-lbl{font-size:13px;font-weight:600;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hbar-track{height:14px;background:#eef2f7;border-radius:20px;overflow:hidden}
+.hbar-track > span{display:block;height:100%;border-radius:20px}
+.hbar-val{font-size:13px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+
+/* donut */
+.donut-wrap{display:flex;align-items:center;gap:24px;flex-wrap:wrap;justify-content:center}
+.donut-legend{display:flex;flex-direction:column;gap:8px;font-size:13px}
+.donut-legend span{display:flex;align-items:center;gap:8px}
+.donut-legend i{width:13px;height:13px;border-radius:3px;display:inline-block}
 
 /* ===== Print (receipt) ===== */
 @media print{

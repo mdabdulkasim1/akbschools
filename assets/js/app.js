@@ -5,6 +5,8 @@
   // routes allowed for the "account" role. Accounts share the full admin
   // dashboard/collections/reports; only Users and Data & Backup stay admin-only.
   const ACCOUNT_ROUTES = { dashboard: 1, students: 1, student: 1, collect: 1, business: 1, collections: 1, reports: 1 };
+  // Teachers have NO access to fee matters — only attendance & marks entry.
+  const TEACHER_ROUTES = { attendance: 1, marks: 1 };
 
   const Router = {
     render() { route(); },
@@ -26,8 +28,12 @@
     document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('active', a.dataset.route === routeName));
   }
 
+  function role() { return (Store.currentUser && Store.currentUser.role) || 'account'; }
+  function landing() { return role() === 'teacher' ? 'attendance' : 'dashboard'; }
+
   function allowed(name) {
     if (Store.isAdmin()) return true;
+    if (role() === 'teacher') return !!TEACHER_ROUTES[name];
     return !!ACCOUNT_ROUTES[name];
   }
 
@@ -35,9 +41,10 @@
     const { seg, params } = parseHash();
     let name = seg[0];
     if (!allowed(name)) {
-      // send accounts to their landing page (dashboard)
-      name = 'dashboard';
-      if (location.hash.replace(/^#\/?/, '').split('/')[0] !== 'dashboard') { location.hash = '#/dashboard'; return; }
+      // send the user to their landing page for their role
+      const land = landing();
+      name = land;
+      if (location.hash.replace(/^#\/?/, '').split('/')[0] !== land) { location.hash = '#/' + land; return; }
     }
     try {
       switch (name) {
@@ -48,9 +55,12 @@
         case 'collect': setActive('collect'); Views.collect(); break;
         case 'collections': setActive('collections'); Views.collections(params); break;
         case 'reports': setActive('reports'); Views.reports(params); break;
+        case 'attendance': setActive('attendance'); Views.attendance(params); break;
+        case 'marks': setActive('marks'); Views.marks(params); break;
+        case 'academics': setActive('academics'); Views.academics(params); break;
         case 'users': setActive('users'); Views.users(); break;
         case 'data': setActive('data'); Views.data(); break;
-        default: location.hash = '#/dashboard';
+        default: location.hash = '#/' + landing();
       }
     } catch (e) {
       console.error(e);
@@ -65,12 +75,17 @@
 
   function applyRoleUI() {
     const admin = Store.isAdmin();
-    document.querySelectorAll('#nav a[data-admin]').forEach(a => a.classList.toggle('hidden', !admin));
+    const r = role();
+    // data-roles="admin account teacher" — show a nav link only for listed roles
+    document.querySelectorAll('#nav a[data-roles]').forEach(a => {
+      const roles = (a.dataset.roles || '').split(/\s+/).filter(Boolean);
+      a.classList.toggle('hidden', roles.length > 0 && roles.indexOf(r) < 0);
+    });
     const u = Store.currentUser || {};
     document.getElementById('userBox').innerHTML = `
       <div class="user-row">
         <div class="user-ava">${U.esc(U.initials(u.name || u.username || '?'))}</div>
-        <div class="user-meta"><strong>${U.esc(u.name || u.username)}</strong><span class="badge ${admin ? 'blue' : 'gray'}">${U.esc(u.role)}</span></div>
+        <div class="user-meta"><strong>${U.esc(u.name || u.username)}</strong><span class="badge ${admin ? 'blue' : (r === 'teacher' ? 'amber' : 'gray')}">${U.esc(u.role)}</span></div>
       </div>
       <div class="user-actions">
         <button class="btn sm" id="changePw">Password</button>
@@ -115,8 +130,8 @@
       wired = true;
     }
     document.getElementById('yearBadge').textContent = (Store.meta.school || 'AKB School') + ' · ' + (Store.meta.year || '');
-    // both roles land on the dashboard
-    if (!location.hash || location.hash === '#/' ) location.hash = '#/dashboard';
+    // land on the role's home page
+    if (!location.hash || location.hash === '#/' ) location.hash = '#/' + landing();
     route();
   }
 

@@ -64,6 +64,28 @@
   const SCHOOL_WHATSAPP = '+919003950980';
   const SCHOOL_WHATSAPP_DISPLAY = '+91 90039 50980';
 
+  // ---- Report card config (attendance + marks) ----
+  const ASSESSMENTS = [
+    { key: 'pt1', label: 'PT1' }, { key: 'pt2', label: 'PT2' }, { key: 'term1', label: 'Term I' },
+    { key: 'pt3', label: 'PT3' }, { key: 'term2', label: 'Term II' }
+  ];
+  const GRADE_SCALE = [
+    { code: 'EX', label: 'Excellent (90-100%)' }, { code: 'GD', label: 'Good (75-89%)' },
+    { code: 'SA', label: 'Satisfactory (60-74%)' }, { code: 'NI', label: 'Need Improvement (<60%)' }
+  ];
+  const SUBJECTS = ['English', 'Tamil', 'Maths', 'EVS/Science', 'Social', 'Robotics', 'Hindi', 'Arabic/V.E'];
+  const KG_DOMAINS = [
+    { title: 'Personal, Social & Emotional Development', items: ['Adjusts well to new environment', 'Interacts confidently with peers and teachers', 'Shares and takes turns willingly', 'Follows classroom rules and routines', 'Demonstrates responsibility in handling belongings', 'Expresses feelings appropriately'] },
+    { title: 'Language & Communication Skills', items: ['Listens attentively to stories and instructions', 'Identifies letters (uppercase & lowercase)', 'Recognizes beginning sounds of words', 'Speaks clearly in simple sentences', 'Participates in storytelling, rhymes, and role play', 'Vocabulary development'] },
+    { title: 'Cognitive / Pre-Math Skills', items: ['Recognizes numbers 1-20', 'Counts objects with one-to-one correspondence', 'Understands basic concepts (big/small, more/less)', 'Identifies and sorts shapes and colors', 'Recognizes patterns and sequences', 'Matches objects and pictures correctly'] },
+    { title: 'Environmental Awareness & GK', items: ['Identifies common animals, birds, and insects', 'Recognizes fruits and vegetables', 'Knows days of the week and seasons', 'Shows curiosity and interest in surroundings', 'Understands basic safety and hygiene rules'] },
+    { title: 'Creative & Aesthetic Development', items: ['Enjoys drawing, coloring, and painting', 'Participates in music, dance, and singing', 'Demonstrates creativity in craft work', 'Uses imagination in role-play/dramatic activities'] },
+    { title: 'Physical Development & Fine Motor', items: ['Holds pencil/crayons correctly', 'Can trace lines, shapes, and letters', 'Can cut, paste, and handle small objects', 'Runs, jumps, and climbs confidently', 'Participates actively in outdoor games', 'Shows balance and coordination'] }
+  ];
+  const REPORT = { ASSESSMENTS, GRADE_SCALE, SUBJECTS, KG_DOMAINS };
+  function isKG(grade) { return /\bKG\b|KINDER/i.test(String(grade || '')); }
+  function normRole(role) { return role === 'admin' ? 'admin' : (role === 'teacher' ? 'teacher' : 'account'); }
+
   // Rebuild the HEAD_* lookups (in place) from a fee-head config array.
   function rebuildHeads(feeHeads) {
     HEAD_ORDER.length = 0;
@@ -94,6 +116,7 @@
     currentUser: null,
     ENTITIES, MODES, HEAD_ORDER, HEAD_LABELS, BUSINESS, BUSINESSES, BUSINESS_ORDER, HEAD_BUSINESS,
     SCHOOL_WHATSAPP, SCHOOL_WHATSAPP_DISPLAY, DEFAULT_FEE_HEADS,
+    REPORT, isKG,
 
     serverMode() { return serverMode; },
 
@@ -443,6 +466,59 @@
       await this.persist();
     },
 
+    /* ---- attendance (meta.attendance = { 'YYYY-MM-DD': { studentId: 'P'|'A' } }) ---- */
+    getAttendance(date) {
+      const a = this.meta.attendance || {};
+      return a[date] || {};
+    },
+    async setAttendance(date, studentId, status) {
+      if (!this.meta.attendance) this.meta.attendance = {};
+      if (!this.meta.attendance[date]) this.meta.attendance[date] = {};
+      this.meta.attendance[date][studentId] = status; // 'P' | 'A'
+      await this.persist();
+    },
+    // Mark every student in a grade present for a date (default fill).
+    async markAllPresent(date, grade) {
+      if (!this.meta.attendance) this.meta.attendance = {};
+      if (!this.meta.attendance[date]) this.meta.attendance[date] = {};
+      const day = this.meta.attendance[date];
+      this.students.filter(s => !grade || s.grade === grade).forEach(s => {
+        if (!day[s.id]) day[s.id] = 'P';
+      });
+      await this.persist();
+    },
+    // Students absent on a date (optionally within a grade).
+    absenteesOn(date, grade) {
+      const day = this.getAttendance(date);
+      return this.students.filter(s => (!grade || s.grade === grade) && day[s.id] === 'A');
+    },
+    // list of grades present in the roster, in a sensible order
+    // (kindergarten first, then numeric/Roman-numeral grades in order, sections after)
+    gradeList() {
+      const kg = ['PRE KG', 'PREKG', 'PRE-KG', 'LKG', 'JKG', 'UKG', 'SKG', 'KG'];
+      const roman = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7, VIII: 8, IX: 9, X: 10, XI: 11, XII: 12 };
+      const set = Array.from(new Set(this.students.map(s => s.grade).filter(Boolean)));
+      const rank = g => {
+        const u = String(g).toUpperCase().trim();
+        const oi = kg.indexOf(u); if (oi >= 0) return oi;                 // 0..7 KG classes
+        const kgSection = u.match(/^(PRE KG|PREKG|PRE-KG|LKG|JKG|UKG|SKG|KG)\b/);
+        if (kgSection) return kg.indexOf(kgSection[1]) + 0.5;             // e.g. "JKG A"
+        const ar = u.match(/(\d+)/); if (ar) return 100 + parseInt(ar[1], 10); // Arabic "Grade 3"
+        const rm = u.match(/^([IVX]+)\b/); if (rm && roman[rm[1]]) return 100 + roman[rm[1]]; // "IX A"
+        return 900;
+      };
+      return set.sort((a, b) => rank(a) - rank(b) || String(a).localeCompare(String(b)));
+    },
+
+    /* ---- report cards (student.report) ---- */
+    async saveStudentReport(id, report) {
+      const s = this.students.find(x => x.id === id);
+      if (!s) throw new Error('Student not found');
+      s.report = report || {};
+      s.reportUpdatedAt = new Date().toISOString();
+      await this.persist();
+    },
+
     /* ---- users & auth (client-side gate) ---- */
     async seedUsers() {
       const defs = [
@@ -476,21 +552,30 @@
       u.mustChange = false;
       await this.persistUsers();
     },
-    async addUser({ username, role, name, password }) {
+    async addUser({ username, role, name, password, grades }) {
       username = String(username || '').trim();
       if (!username) throw new Error('Username required');
       if (this.getUser(username)) throw new Error('Username already exists');
       if (!password || password.length < 4) throw new Error('Password too short (min 4)');
       const salt = randSalt();
-      this.users.push({
-        username, role: role === 'admin' ? 'admin' : 'account', name: name || username,
+      const u = {
+        username, role: normRole(role), name: name || username,
         salt, hash: await pbkdf(password, salt), mustChange: false, createdAt: new Date().toISOString()
-      });
+      };
+      if (u.role === 'teacher') u.grades = Array.isArray(grades) ? grades.slice() : [];
+      this.users.push(u);
       await this.persistUsers();
     },
     async updateUserRole(username, role) {
       const u = this.getUser(username); if (!u) return;
-      u.role = role === 'admin' ? 'admin' : 'account';
+      u.role = normRole(role);
+      if (u.role === 'teacher') { if (!Array.isArray(u.grades)) u.grades = []; }
+      else delete u.grades;
+      await this.persistUsers();
+    },
+    async setUserGrades(username, grades) {
+      const u = this.getUser(username); if (!u) return;
+      u.grades = Array.isArray(grades) ? grades.slice() : [];
       await this.persistUsers();
     },
     async deleteUser(username) {

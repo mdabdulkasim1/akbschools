@@ -1170,38 +1170,56 @@
   }
 
   /* -------------------------------------------------- Users (admin) */
+  function roleBadge(r) {
+    const cls = r === 'admin' ? 'blue' : (r === 'teacher' ? 'amber' : 'gray');
+    return `<span class="badge ${cls}">${U.esc(r)}</span>`;
+  }
   function users() {
-    const rows = Store.users.map(u => `<tr>
+    const rows = Store.users.map(u => {
+      const isT = u.role === 'teacher';
+      const gr = isT ? (Array.isArray(u.grades) && u.grades.length ? u.grades.join(', ') : '<span style="color:var(--red)">no class assigned</span>') : '<span class="muted">—</span>';
+      return `<tr>
       <td><b>${U.esc(u.name || u.username)}</b><div class="muted" style="font-size:11px">@${U.esc(u.username)}</div></td>
-      <td><span class="badge ${u.role === 'admin' ? 'blue' : 'gray'}">${U.esc(u.role)}</span>${u.mustChange ? ' <span class="badge amber">default pwd</span>' : ''}</td>
+      <td>${roleBadge(u.role)}${u.mustChange ? ' <span class="badge amber">default pwd</span>' : ''}</td>
+      <td>${gr}</td>
       <td class="t-right">
-        <button class="btn sm" data-reset="${U.esc(u.username)}">Reset password</button>
-        <button class="btn sm" data-role="${U.esc(u.username)}">${u.role === 'admin' ? 'Make account' : 'Make admin'}</button>
+        <select class="sel-inline" data-roleselect="${U.esc(u.username)}">
+          <option value="account"${u.role === 'account' ? ' selected' : ''}>Account</option>
+          <option value="teacher"${u.role === 'teacher' ? ' selected' : ''}>Teacher</option>
+          <option value="admin"${u.role === 'admin' ? ' selected' : ''}>Admin</option>
+        </select>
+        ${isT ? `<button class="btn sm" data-grades="${U.esc(u.username)}">Classes</button>` : ''}
+        <button class="btn sm" data-reset="${U.esc(u.username)}">Reset pwd</button>
         <button class="btn sm danger" data-del="${U.esc(u.username)}">Delete</button>
-      </td></tr>`).join('');
+      </td></tr>`;
+    }).join('');
     const nAdmin = Store.users.filter(u => u.role === 'admin').length;
     const nAcct = Store.users.filter(u => u.role === 'account').length;
-    const nDefault = Store.users.filter(u => u.mustChange).length;
+    const nTeach = Store.users.filter(u => u.role === 'teacher').length;
     view().innerHTML = `
-      <div class="page-head"><div><h1>Users &amp; Access</h1><p>Admins see everything; accounts can record payments and view students' pending fees</p></div>
+      <div class="page-head"><div><h1>Users &amp; Access</h1><p>Admins see everything · accounts handle fees · teachers handle attendance &amp; report cards only</p></div>
         <button class="btn primary" id="addUser">＋ Add user</button></div>
       <div class="cards">
         ${kpi('Total Users', Store.users.length, { accent: 'blue' })}
         ${kpi('Admins', nAdmin, { accent: 'green' })}
         ${kpi('Accounts', nAcct, { accent: 'amber' })}
-        ${kpi('Default Passwords', nDefault, { accent: nDefault ? 'red' : 'green', sub: nDefault ? 'change these!' : 'all changed' })}
+        ${kpi('Teachers', nTeach, { accent: 'blue' })}
       </div>
       <div class="panel"><div class="panel-head"><h2>User Accounts</h2></div><div class="table-scroll"><table>
-        <thead><tr><th>User</th><th>Role</th><th class="t-right">Actions</th></tr></thead><tbody>${rows}</tbody></table></div></div>
+        <thead><tr><th>User</th><th>Role</th><th>Class(es)</th><th class="t-right">Actions</th></tr></thead><tbody>${rows}</tbody></table></div></div>
       <div class="panel"><div class="panel-body pad">
-        <p class="muted" style="margin:0"><b>Note on security:</b> this login runs in the browser, so it's an access convenience for staff on shared devices — not server‑grade protection. For a public deploy, also set the <code>APP_PASSWORD</code> environment variable (site‑wide gate) and, for true multi‑user security, use the backend option.</p>
+        <p class="muted" style="margin:0"><b>Teachers</b> can only open <b>Attendance</b> and <b>Report Cards</b> for the class(es) you assign — they never see fees, collections or reports. <b>Note on security:</b> this login runs in the browser, so it's an access convenience for staff on shared devices — not server‑grade protection. For a public deploy, also set the <code>APP_PASSWORD</code> environment variable.</p>
       </div></div>`;
     $('#addUser').onclick = () => userModal();
     $$('[data-reset]').forEach(b => b.onclick = () => resetPwModal(b.dataset.reset));
-    $$('[data-role]').forEach(b => b.onclick = async () => {
-      const u = Store.getUser(b.dataset.role);
-      await Store.updateUserRole(u.username, u.role === 'admin' ? 'account' : 'admin');
-      U.toast('Role updated', 'success'); users();
+    $$('[data-grades]').forEach(b => b.onclick = () => gradeAssignModal(b.dataset.grades));
+    $$('[data-roleselect]').forEach(sel => sel.onchange = async () => {
+      const u = Store.getUser(sel.dataset.roleselect);
+      const newRole = sel.value;
+      await Store.updateUserRole(u.username, newRole);
+      U.toast('Role updated', 'success');
+      if (newRole === 'teacher' && (!u.grades || !u.grades.length)) gradeAssignModal(u.username);
+      else users();
     });
     $$('[data-del]').forEach(b => b.onclick = async () => {
       if (!confirm('Delete user "' + b.dataset.del + '"?')) return;
@@ -1210,15 +1228,50 @@
     });
   }
 
+  // checkbox list of grades → assign to a teacher
+  function gradeCheckboxes(selected) {
+    const sel = selected || [];
+    return Store.gradeList().map(g =>
+      `<label class="chk-inline"><input type="checkbox" value="${U.esc(g)}"${sel.indexOf(g) >= 0 ? ' checked' : ''}/> ${U.esc(g)}</label>`
+    ).join('') || '<span class="muted">No grades found in the student roster yet.</span>';
+  }
+  function gradeAssignModal(username) {
+    const u = Store.getUser(username); if (!u) return;
+    const root = document.getElementById('modalRoot');
+    root.innerHTML = `
+      <div class="modal-backdrop" id="gBackdrop"><div class="modal">
+        <div class="modal-head"><h3>Assign class(es) — ${U.esc(u.name || u.username)}</h3><button class="x-close" id="gClose">&times;</button></div>
+        <div class="modal-body">
+          <p class="muted">Tick the class(es) this teacher is responsible for. They'll see attendance &amp; report cards for these students only.</p>
+          <div class="chk-grid" id="gGrades">${gradeCheckboxes(u.grades)}</div>
+        </div>
+        <div class="modal-foot"><button class="btn" id="gCancel">Cancel</button><button class="btn primary" id="gSave">Save classes</button></div>
+      </div></div>`;
+    const close = () => { root.innerHTML = ''; };
+    $('#gClose', root).onclick = close; $('#gCancel', root).onclick = close;
+    $('#gBackdrop', root).onclick = e => { if (e.target.id === 'gBackdrop') close(); };
+    $('#gSave', root).onclick = async () => {
+      const grades = $$('#gGrades input:checked', root).map(c => c.value);
+      await Store.setUserGrades(username, grades);
+      close(); U.toast('Classes assigned', 'success'); users();
+    };
+  }
+
   function userModal() {
     const root = document.getElementById('modalRoot');
     root.innerHTML = `
       <div class="modal-backdrop" id="uBackdrop"><div class="modal">
         <div class="modal-head"><h3>Add user</h3><button class="x-close" id="uClose">&times;</button></div>
         <div class="modal-body">
-          <div class="field"><label>Full name</label><input id="uName" placeholder="e.g. Account 3"/></div>
-          <div class="field"><label>Username</label><input id="uUser" placeholder="e.g. account3"/></div>
-          <div class="field"><label>Role</label><select id="uRole"><option value="account">Account (data entry)</option><option value="admin">Admin (full access)</option></select></div>
+          <div class="field"><label>Full name</label><input id="uName" placeholder="e.g. Mrs. Priya (Grade 3 teacher)"/></div>
+          <div class="field"><label>Username</label><input id="uUser" placeholder="e.g. teacher_g3"/></div>
+          <div class="field"><label>Role</label><select id="uRole">
+            <option value="account">Account (fees data entry)</option>
+            <option value="teacher">Teacher (attendance &amp; report cards)</option>
+            <option value="admin">Admin (full access)</option>
+          </select></div>
+          <div class="field hidden" id="uGradesField"><label>Class(es) this teacher handles</label>
+            <div class="chk-grid" id="uGrades">${gradeCheckboxes([])}</div></div>
           <div class="field"><label>Password</label><input id="uPass" type="text" placeholder="min 4 characters"/></div>
         </div>
         <div class="modal-foot"><button class="btn" id="uCancel">Cancel</button><button class="btn primary" id="uSave">Create user</button></div>
@@ -1226,9 +1279,12 @@
     const close = () => { root.innerHTML = ''; };
     $('#uClose', root).onclick = close; $('#uCancel', root).onclick = close;
     $('#uBackdrop', root).onclick = e => { if (e.target.id === 'uBackdrop') close(); };
+    $('#uRole', root).onchange = () => { $('#uGradesField', root).classList.toggle('hidden', $('#uRole', root).value !== 'teacher'); };
     $('#uSave', root).onclick = async () => {
       try {
-        await Store.addUser({ name: $('#uName', root).value, username: $('#uUser', root).value, role: $('#uRole', root).value, password: $('#uPass', root).value });
+        const role = $('#uRole', root).value;
+        const grades = role === 'teacher' ? $$('#uGrades input:checked', root).map(c => c.value) : undefined;
+        await Store.addUser({ name: $('#uName', root).value, username: $('#uUser', root).value, role, password: $('#uPass', root).value, grades });
         close(); U.toast('User created', 'success'); users();
       } catch (e) { U.toast(e.message, 'error'); }
     };
@@ -1383,5 +1439,349 @@
     })();
   }
 
-  w.Views = { dashboard, students, studentDetail, businessDashboard, collect, collections, reports, users, data, openPaymentModal, changePassword };
+  /* ==================================================================
+     TEACHER MODULE — Attendance, Report Cards (marks) & Academics
+     ================================================================== */
+
+  // grades the current user may work with (admin = all; teacher = assigned)
+  function myGrades() {
+    const u = Store.currentUser || {};
+    if (u.role === 'admin') return Store.gradeList();
+    return Array.isArray(u.grades) ? u.grades.filter(Boolean) : [];
+  }
+  const GRADE_COLORS = { EX: '#16a34a', GD: '#2563eb', SA: '#d97706', NI: '#dc2626' };
+  function lastDates(n) {
+    const out = [], d = new Date();
+    for (let i = n - 1; i >= 0; i--) { const dd = new Date(d); dd.setDate(d.getDate() - i); out.push(dd.toISOString().slice(0, 10)); }
+    return out;
+  }
+  function absentText(s, date) {
+    const school = (Store.meta && Store.meta.school) || 'AKB School of Excellence';
+    return 'Dear Parent, this is to inform you that ' + s.name + (s.grade ? ' (' + s.grade + ')' : '') +
+      ' was marked ABSENT today (' + U.fmtDate(date) + ') at ' + school +
+      '. If this is unexpected, kindly contact the school. Please ensure regular attendance. Thank you.';
+  }
+
+  /* -------------------------------------------------- Attendance */
+  let attState = { date: '', grade: '' };
+  function attendance() {
+    const grades = myGrades();
+    if (!attState.date) attState.date = U.todayISO();
+    if (!attState.grade || grades.indexOf(attState.grade) < 0) attState.grade = grades[0] || '';
+    const isAdmin = Store.isAdmin();
+
+    if (!grades.length) {
+      view().innerHTML = `<div class="page-head"><div><h1>Attendance</h1></div></div>
+        <div class="panel"><div class="panel-body pad"><div class="empty">No class has been assigned to you yet. Please ask the administrator to assign your class under <b>Users &amp; Access</b>.</div></div></div>`;
+      return;
+    }
+
+    const gradeOpts = grades.map(g => `<option value="${U.esc(g)}"${attState.grade === g ? ' selected' : ''}>${U.esc(g)}</option>`).join('');
+    const roster = Store.students.filter(s => s.grade === attState.grade)
+      .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    const day = Store.getAttendance(attState.date);
+    let present = 0, absent = 0, unmarked = 0;
+    roster.forEach(s => { const v = day[s.id]; if (v === 'P') present++; else if (v === 'A') absent++; else unmarked++; });
+
+    const rows = roster.map(s => {
+      const v = day[s.id] || '';
+      const wa = (v === 'A' && s.contact)
+        ? `<a class="btn sm wa" target="_blank" rel="noopener" href="${U.waLink(s.contact, absentText(s, attState.date))}" title="WhatsApp absent notice to parent">💬 Notify</a>`
+        : (v === 'A' && !s.contact ? '<span class="muted" style="font-size:11px">no mobile</span>' : '');
+      return `<tr class="${v === 'A' ? 'row-absent' : ''}">
+        <td><b>${U.esc(s.name)}</b><div class="muted" style="font-size:11px">${U.esc(s.id)}${s.contact ? ' · ' + U.esc(s.contact) : ''}</div></td>
+        <td class="t-center">
+          <div class="att-toggle">
+            <button class="att-btn p ${v === 'P' ? 'on' : ''}" data-att="P" data-id="${U.esc(s.id)}">Present</button>
+            <button class="att-btn a ${v === 'A' ? 'on' : ''}" data-att="A" data-id="${U.esc(s.id)}">Absent</button>
+          </div>
+        </td>
+        <td class="t-right">${wa}</td></tr>`;
+    }).join('') || '<tr><td colspan="3" class="empty">No students in this class.</td></tr>';
+
+    view().innerHTML = `
+      <div class="page-head">
+        <div><h1>Attendance</h1><p>Mark each student, then WhatsApp the parents of absentees</p></div>
+      </div>
+      <div class="panel"><div class="panel-head">
+        <div class="toolbar">
+          <label class="fld"><span>Date</span><input type="date" id="attDate" value="${attState.date}" max="${U.todayISO()}"/></label>
+          <label class="fld"><span>Class</span><select id="attGrade">${gradeOpts}</select></label>
+          <button class="btn" id="attAllPresent">✔ Mark all present</button>
+        </div>
+        <span class="muted">${U.fmtDate(attState.date)}</span>
+      </div>
+      <div class="cards" style="margin:12px">
+        ${kpi('Students', roster.length, { accent: 'blue' })}
+        ${kpi('Present', present, { accent: 'green' })}
+        ${kpi('Absent', absent, { accent: 'red' })}
+        ${kpi('Not marked', unmarked, { accent: unmarked ? 'amber' : 'green' })}
+      </div>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Student</th><th class="t-center">Attendance</th><th class="t-right">Absent action</th></tr></thead>
+        <tbody>${rows}</tbody></table></div></div>
+      ${isAdmin ? adminAbsenteePanel(attState.date) : ''}`;
+
+    $('#attDate').onchange = e => { attState.date = e.target.value || U.todayISO(); attendance(); };
+    $('#attGrade').onchange = e => { attState.grade = e.target.value; attendance(); };
+    $('#attAllPresent').onclick = async () => { await Store.markAllPresent(attState.date, attState.grade); U.toast('All marked present', 'success'); attendance(); };
+    $$('[data-att]').forEach(b => b.onclick = async () => {
+      await Store.setAttendance(attState.date, b.dataset.id, b.dataset.att);
+      attendance();
+    });
+  }
+  // admin: absentees across ALL grades for the date
+  function adminAbsenteePanel(date) {
+    const abs = Store.absenteesOn(date).sort((a, b) => String(a.grade).localeCompare(String(b.grade)) || String(a.name).localeCompare(String(b.name)));
+    const rows = abs.map(s => `<tr>
+      <td>${U.esc(s.grade || '—')}</td>
+      <td><b>${U.esc(s.name)}</b></td>
+      <td>${U.esc(s.contact || '—')}</td>
+      <td class="t-right">${s.contact ? `<a class="btn sm wa" target="_blank" rel="noopener" href="${U.waLink(s.contact, absentText(s, date))}">💬 Notify</a>` : ''}</td>
+    </tr>`).join('') || '<tr><td colspan="4" class="empty">No students marked absent for this date. 🎉</td></tr>';
+    return `<div class="panel"><div class="panel-head"><h2>Daily Absentee Report — All Classes</h2><span class="muted">${U.fmtDate(date)}</span></div>
+      <div class="table-scroll"><table><thead><tr><th>Class</th><th>Student</th><th>Parent mobile</th><th class="t-right">Action</th></tr></thead>
+      <tbody>${rows}</tbody></table></div></div>`;
+  }
+
+  /* -------------------------------------------------- Report Cards (marks) */
+  let markState = { grade: '', studentId: '' };
+  function reportKeysFor(grade) {
+    // returns [{key,label,group}] rows for the marks grid
+    if (Store.isKG(grade)) {
+      const out = [];
+      Store.REPORT.KG_DOMAINS.forEach((d, di) => d.items.forEach((it, ii) => out.push({ key: 'K:' + di + ':' + ii, label: it, group: d.title })));
+      return out;
+    }
+    return Store.REPORT.SUBJECTS.map(s => ({ key: 'S:' + s, label: s, group: 'Subjects' }));
+  }
+  function marks() {
+    const grades = myGrades();
+    if (!grades.length) {
+      view().innerHTML = `<div class="page-head"><div><h1>Report Cards</h1></div></div>
+        <div class="panel"><div class="panel-body pad"><div class="empty">No class assigned yet. Ask the administrator to assign your class under <b>Users &amp; Access</b>.</div></div></div>`;
+      return;
+    }
+    if (!markState.grade || grades.indexOf(markState.grade) < 0) { markState.grade = grades[0]; markState.studentId = ''; }
+    const roster = Store.students.filter(s => s.grade === markState.grade).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    if (!markState.studentId || !roster.find(s => s.id === markState.studentId)) markState.studentId = roster[0] ? roster[0].id : '';
+    const student = roster.find(s => s.id === markState.studentId);
+    const kg = Store.isKG(markState.grade);
+
+    const gradeOpts = grades.map(g => `<option value="${U.esc(g)}"${markState.grade === g ? ' selected' : ''}>${U.esc(g)}</option>`).join('');
+    const stuOpts = roster.map(s => `<option value="${U.esc(s.id)}"${markState.studentId === s.id ? ' selected' : ''}>${U.esc(s.name)}</option>`).join('')
+      || '<option value="">No students</option>';
+
+    let gridHtml = '<div class="empty">No student selected.</div>';
+    if (student) {
+      const report = student.report || {}; const marksData = report.marks || {};
+      const rowsCfg = reportKeysFor(markState.grade);
+      const optCells = code => Store.REPORT.GRADE_SCALE.map(g => `<option value="${g.code}"${code === g.code ? ' selected' : ''}>${g.code}</option>`).join('');
+      let body = '', lastGroup = null;
+      rowsCfg.forEach(r => {
+        if (r.group !== lastGroup) { body += `<tr class="grp-row"><td colspan="${1 + Store.REPORT.ASSESSMENTS.length}">${U.esc(r.group)}</td></tr>`; lastGroup = r.group; }
+        const cell = marksData[r.key] || {};
+        const tds = Store.REPORT.ASSESSMENTS.map(a =>
+          `<td class="t-center"><select class="mk-sel" data-key="${U.esc(r.key)}" data-as="${a.key}"><option value="">–</option>${optCells(cell[a.key] || '')}</select></td>`
+        ).join('');
+        body += `<tr><td>${U.esc(r.label)}</td>${tds}</tr>`;
+      });
+      const asHead = Store.REPORT.ASSESSMENTS.map(a => `<th class="t-center">${U.esc(a.label)}</th>`).join('');
+      gridHtml = `
+        <div class="scale-legend">${Store.REPORT.GRADE_SCALE.map(g => `<span><b style="color:${GRADE_COLORS[g.code]}">${g.code}</b> ${U.esc(g.label)}</span>`).join('')}</div>
+        <div class="table-scroll"><table class="marks-grid">
+          <thead><tr><th>${kg ? 'Skill / Ability' : 'Subject'}</th>${asHead}</tr></thead>
+          <tbody>${body}</tbody></table></div>
+        <div class="field mt"><label>Class teacher's remarks</label><textarea id="mkRemarks" rows="2" placeholder="Overall remarks for the report card…">${U.esc(report.remarks || '')}</textarea></div>
+        <div class="flex gap wrap mt">
+          <button class="btn primary" id="mkSave">💾 Save report card</button>
+          <button class="btn" id="mkPrint">🖨️ Preview / Print report card</button>
+          ${student.reportUpdatedAt ? `<span class="muted" style="align-self:center">Last saved ${U.fmtDate(student.reportUpdatedAt.slice(0, 10))}</span>` : ''}
+        </div>`;
+    }
+
+    view().innerHTML = `
+      <div class="page-head"><div><h1>Report Cards</h1><p>Enter recent assessment grades for each student — as per the AKB report card</p></div></div>
+      <div class="panel"><div class="panel-head">
+        <div class="toolbar">
+          <label class="fld"><span>Class</span><select id="mkGrade">${gradeOpts}</select></label>
+          <label class="fld"><span>Student</span><select id="mkStudent">${stuOpts}</select></label>
+        </div>
+        <span class="muted">${kg ? 'Skill-based checklist' : 'Grades 1–9 subjects'}</span>
+      </div><div class="panel-body pad">${gridHtml}</div></div>`;
+
+    $('#mkGrade').onchange = e => { markState.grade = e.target.value; markState.studentId = ''; marks(); };
+    $('#mkStudent').onchange = e => { markState.studentId = e.target.value; marks(); };
+    const save = $('#mkSave');
+    if (save) save.onclick = async () => {
+      const marksData = {};
+      $$('.mk-sel').forEach(sel => {
+        const k = sel.dataset.key, a = sel.dataset.as, v = sel.value;
+        if (!v) return; (marksData[k] = marksData[k] || {})[a] = v;
+      });
+      await Store.saveStudentReport(student.id, { marks: marksData, remarks: $('#mkRemarks').value.trim() });
+      U.toast('Report card saved', 'success'); marks();
+    };
+    const pr = $('#mkPrint'); if (pr) pr.onclick = () => printReportCard(student);
+  }
+
+  // printable report card (AKB format)
+  function printReportCard(s) {
+    const kg = Store.isKG(s.grade);
+    const report = s.report || {}; const marksData = report.marks || {};
+    const rowsCfg = reportKeysFor(s.grade);
+    const asHead = Store.REPORT.ASSESSMENTS.map(a => `<th>${U.esc(a.label)}</th>`).join('');
+    let body = '', lastGroup = null;
+    rowsCfg.forEach(r => {
+      if (kg && r.group !== lastGroup) { body += `<tr class="grp"><td colspan="${1 + Store.REPORT.ASSESSMENTS.length}">${U.esc(r.group)}</td></tr>`; lastGroup = r.group; }
+      const cell = marksData[r.key] || {};
+      const tds = Store.REPORT.ASSESSMENTS.map(a => { const v = cell[a.key] || ''; return `<td style="text-align:center;font-weight:700;color:${GRADE_COLORS[v] || '#334155'}">${U.esc(v)}</td>`; }).join('');
+      body += `<tr><td>${U.esc(r.label)}</td>${tds}</tr>`;
+    });
+    const school = (Store.meta && Store.meta.school) || 'AKB School of Excellence';
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Report Card — ${U.esc(s.name)}</title>
+      <style>
+        body{font-family:Arial,Helvetica,sans-serif;color:#1e293b;margin:24px}
+        .rc-head{display:flex;align-items:center;gap:14px;border-bottom:3px solid #1d4ed8;padding-bottom:10px}
+        .rc-head img{height:64px}
+        .rc-head h1{margin:0;font-size:20px;color:#1d4ed8}
+        .rc-head p{margin:2px 0;font-size:12px;color:#475569}
+        .meta{display:flex;gap:24px;flex-wrap:wrap;margin:14px 0;font-size:13px}
+        .meta b{color:#0f172a}
+        table{width:100%;border-collapse:collapse;font-size:12px}
+        th,td{border:1px solid #cbd5e1;padding:6px 8px}
+        th{background:#eff6ff;text-align:left}
+        tr.grp td{background:#f1f5f9;font-weight:700}
+        .scale{margin:12px 0;font-size:11px;color:#475569}
+        .scale b{margin-right:2px}
+        .remarks{margin-top:14px;font-size:13px}
+        .sign{margin-top:40px;display:flex;justify-content:space-between;font-size:12px}
+        @media print{ .noprint{display:none} }
+      </style></head><body>
+      <div class="rc-head"><img src="${location.origin + location.pathname.replace(/[^/]*$/, '')}assets/img/logo-school.svg" alt=""/>
+        <div><h1>${U.esc(school)}</h1><p>Student Progress Report — Academic Year ${U.esc(Store.meta.year || '')}</p></div></div>
+      <div class="meta"><span><b>Name:</b> ${U.esc(s.name)}</span><span><b>Class:</b> ${U.esc(s.grade || '')}</span><span><b>ID:</b> ${U.esc(s.id)}</span>${s.father ? `<span><b>Parent:</b> ${U.esc(s.father)}</span>` : ''}</div>
+      <table><thead><tr><th>${kg ? 'Skill / Ability' : 'Subject'}</th>${asHead}</tr></thead><tbody>${body}</tbody></table>
+      <div class="scale"><b>Grading:</b> ${Store.REPORT.GRADE_SCALE.map(g => g.code + ' = ' + g.label).join(' &nbsp;·&nbsp; ')}</div>
+      ${report.remarks ? `<div class="remarks"><b>Class teacher's remarks:</b> ${U.esc(report.remarks)}</div>` : ''}
+      <div class="sign"><span>Class Teacher</span><span>Principal / Chairman</span></div>
+      <div class="noprint" style="margin-top:24px"><button onclick="window.print()">Print</button></div>
+      </body></html>`;
+    const wdw = window.open('', '_blank');
+    if (!wdw) { U.toast('Please allow pop-ups to print', 'error'); return; }
+    wdw.document.write(html); wdw.document.close();
+  }
+
+  /* -------------------------------------------------- Academics dashboard (admin/chairman) */
+  function hasReport(s) {
+    const m = s.report && s.report.marks; if (!m) return false;
+    return Object.keys(m).some(k => Object.keys(m[k] || {}).some(a => m[k][a]));
+  }
+  // horizontal bar chart: items=[{label,value,color,sub}]
+  function hbars(items, opts) {
+    opts = opts || {};
+    const max = Math.max(1, ...items.map(i => i.value));
+    return `<div class="hbars">` + items.map(i => `
+      <div class="hbar-row"><div class="hbar-lbl">${U.esc(i.label)}</div>
+        <div class="hbar-track"><span style="width:${Math.round(i.value / max * 100)}%;background:${i.color || '#2563eb'}"></span></div>
+        <div class="hbar-val">${opts.pct ? i.value + '%' : U.inum(i.value)}${i.sub ? ' <span class="muted">' + i.sub + '</span>' : ''}</div></div>`).join('') + `</div>`;
+  }
+  // donut chart: segments=[{label,value,color}]
+  function donut(segments) {
+    const total = segments.reduce((a, s) => a + s.value, 0) || 1;
+    const R = 60, C = 2 * Math.PI * R; let off = 0;
+    const rings = segments.map(s => {
+      const frac = s.value / total, len = frac * C;
+      const el = `<circle r="${R}" cx="80" cy="80" fill="none" stroke="${s.color}" stroke-width="26"
+        stroke-dasharray="${len} ${C - len}" stroke-dashoffset="${-off}" transform="rotate(-90 80 80)"><title>${U.esc(s.label)}: ${s.value}</title></circle>`;
+      off += len; return el;
+    }).join('');
+    const legend = segments.map(s => `<span><i style="background:${s.color}"></i>${U.esc(s.label)} <b>${s.value}</b> (${Math.round(s.value / total * 100)}%)</span>`).join('');
+    return `<div class="donut-wrap"><svg viewBox="0 0 160 160" width="160" height="160">
+      <circle r="${R}" cx="80" cy="80" fill="none" stroke="#eef2f7" stroke-width="26"/>${rings}
+      <text x="80" y="76" text-anchor="middle" font-size="22" font-weight="700" fill="#0f172a">${total}</text>
+      <text x="80" y="96" text-anchor="middle" font-size="10" fill="#64748b">grades</text></svg>
+      <div class="donut-legend">${legend}</div></div>`;
+  }
+  // line chart of daily present% : points=[{label,value|null}]
+  function lineChart(points) {
+    const W = 720, H = 200, padL = 34, padB = 30, padT = 12, padR = 10;
+    const n = points.length, iw = (W - padL - padR);
+    const x = i => padL + (n <= 1 ? iw / 2 : iw * i / (n - 1));
+    const y = v => padT + (H - padT - padB) * (1 - v / 100);
+    let grid = '';
+    for (let t = 0; t <= 4; t++) { const val = 25 * t, yy = y(val); grid += `<line x1="${padL}" y1="${yy}" x2="${W - padR}" y2="${yy}" stroke="#eef2f7"/><text x="${padL - 6}" y="${yy + 3}" text-anchor="end" font-size="9" fill="#94a3b8">${val}%</text>`; }
+    const pts = points.map((p, i) => p.value == null ? null : [x(i), y(p.value)]);
+    let path = '', dots = '', prev = null;
+    pts.forEach((p, i) => {
+      if (p) { path += (prev ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1) + ' '; prev = p; dots += `<circle cx="${p[0]}" cy="${p[1]}" r="3.5" fill="#1d4ed8"><title>${U.esc(points[i].label)}: ${points[i].value}%</title></circle>`; }
+    });
+    const labels = points.map((p, i) => `<text x="${x(i)}" y="${H - padB + 14}" text-anchor="middle" font-size="9" fill="#475569">${U.esc(p.label)}</text>`).join('');
+    return `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet">${grid}
+      <path d="${path}" fill="none" stroke="#1d4ed8" stroke-width="2.5"/>${dots}
+      <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="#cbd5e1"/>${labels}</svg>`;
+  }
+
+  function academics() {
+    const students = Store.students;
+    const grades = Store.gradeList();
+    const withReport = students.filter(hasReport);
+    const today = U.todayISO();
+
+    // grade-scale distribution across all entered marks
+    const scaleCount = { EX: 0, GD: 0, SA: 0, NI: 0 };
+    students.forEach(s => { const m = (s.report && s.report.marks) || {}; Object.keys(m).forEach(k => Object.keys(m[k]).forEach(a => { const v = m[k][a]; if (scaleCount[v] != null) scaleCount[v]++; })); });
+    const totalMarks = scaleCount.EX + scaleCount.GD + scaleCount.SA + scaleCount.NI;
+    const segs = Store.REPORT.GRADE_SCALE.map(g => ({ label: g.code, value: scaleCount[g.code], color: GRADE_COLORS[g.code] }));
+
+    // attendance today
+    const day = Store.getAttendance(today);
+    let present = 0, absent = 0; students.forEach(s => { if (day[s.id] === 'P') present++; else if (day[s.id] === 'A') absent++; });
+    const marked = present + absent;
+    const presentPct = marked ? Math.round(present / marked * 100) : 0;
+
+    // 7-day attendance trend
+    const days = lastDates(7).map(d => {
+      const dd = Store.getAttendance(d); let p = 0, a = 0;
+      students.forEach(s => { if (dd[s.id] === 'P') p++; else if (dd[s.id] === 'A') a++; });
+      return { label: d.slice(5), value: (p + a) ? Math.round(p / (p + a) * 100) : null };
+    });
+
+    // per-grade report completion
+    const gradeBars = grades.map(g => {
+      const inG = students.filter(s => s.grade === g);
+      const done = inG.filter(hasReport).length;
+      return { label: g, value: inG.length ? Math.round(done / inG.length * 100) : 0, color: '#2563eb', sub: done + '/' + inG.length };
+    });
+
+    // per-grade absentees today
+    const absToday = Store.absenteesOn(today);
+
+    view().innerHTML = `
+      <div class="page-head"><div><h1>Academics Dashboard</h1><p>Report cards &amp; attendance overview — ${U.esc(Store.meta.school || 'AKB School')}</p></div>
+        <div class="flex gap"><a class="btn" href="#/attendance">📝 Attendance</a><a class="btn" href="#/marks">📚 Report Cards</a></div></div>
+      <div class="cards">
+        ${kpi('Students', students.length, { accent: 'blue' })}
+        ${kpi('Report cards started', withReport.length, { accent: 'green', sub: (students.length ? Math.round(withReport.length / students.length * 100) : 0) + '% of students' })}
+        ${kpi('Present today', present, { accent: 'green', sub: presentPct + '% of ' + marked + ' marked' })}
+        ${kpi('Absent today', absent, { accent: absent ? 'red' : 'green', sub: absToday.length + ' across school' })}
+      </div>
+      <div class="grid-2">
+        <div class="panel"><div class="panel-head"><h2>Overall Grade Distribution</h2><span class="muted">${totalMarks} grades entered</span></div>
+          <div class="panel-body pad">${totalMarks ? donut(segs) : '<div class="empty">No report-card grades entered yet.</div>'}</div></div>
+        <div class="panel"><div class="panel-head"><h2>Attendance Trend (7 days)</h2><span class="muted">% present</span></div>
+          <div class="panel-body pad">${lineChart(days)}</div></div>
+      </div>
+      <div class="panel"><div class="panel-head"><h2>Report Card Completion by Class</h2><span class="muted">% of students entered</span></div>
+        <div class="panel-body pad">${gradeBars.length ? hbars(gradeBars, { pct: true }) : '<div class="empty">No classes yet.</div>'}</div></div>
+      <div class="panel"><div class="panel-head"><h2>Absentees Today</h2><span class="muted">${U.fmtDate(today)}</span></div>
+        <div class="table-scroll"><table><thead><tr><th>Class</th><th>Student</th><th>Parent mobile</th><th class="t-right">Notify</th></tr></thead>
+        <tbody>${absToday.length ? absToday.sort((a, b) => String(a.grade).localeCompare(String(b.grade))).map(s => `<tr>
+          <td>${U.esc(s.grade || '—')}</td><td><b>${U.esc(s.name)}</b></td><td>${U.esc(s.contact || '—')}</td>
+          <td class="t-right">${s.contact ? `<a class="btn sm wa" target="_blank" rel="noopener" href="${U.waLink(s.contact, absentText(s, today))}">💬</a>` : ''}</td></tr>`).join('')
+        : '<tr><td colspan="4" class="empty">No absentees recorded today. 🎉</td></tr>'}</tbody></table></div></div>`;
+    bindNav();
+  }
+
+  w.Views = { dashboard, students, studentDetail, businessDashboard, collect, collections, reports, attendance, marks, academics, users, data, openPaymentModal, changePassword };
 })(window);
