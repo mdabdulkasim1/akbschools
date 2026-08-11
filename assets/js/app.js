@@ -51,7 +51,7 @@
         case 'dashboard': setActive('dashboard'); Views.dashboard(); break;
         case 'students': setActive('students'); Views.students(params); break;
         case 'student': setActive('students'); Views.studentDetail(decodeURIComponent(seg[1] || '')); break;
-        case 'business': setActive('dashboard'); Views.businessDashboard(decodeURIComponent(seg[1] || '')); break;
+        case 'business': setActive('dashboard'); Views.businessDashboard(decodeURIComponent(seg[1] || ''), params); break;
         case 'collect': setActive('collect'); Views.collect(); break;
         case 'collections': setActive('collections'); Views.collections(params); break;
         case 'reports': setActive('reports'); Views.reports(params); break;

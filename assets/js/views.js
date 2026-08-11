@@ -57,15 +57,27 @@
     const todaySum = todayPays.reduce((a, p) => a + p.amount, 0);
     const appCollected = Store.payments.reduce((a, p) => a + p.amount, 0);
 
-    // business-wise summary (fees mapped to their business)
-    const bizSum = Store.BUSINESS_ORDER.map(bk => {
-      let total = 0, paid = 0;
-      Store.HEAD_ORDER.forEach(k => { if (Store.businessOfHead(k) === bk) students.forEach(s => { const h = s.fees[k]; if (h) { total += h.total; paid += h.paid; } }); });
-      return { bk, B: Store.BUSINESSES[bk], total, paid, bal: total - paid };
+    // business-wise summary (fees mapped to their business). AKB School of
+    // Excellence is shown as two cards: Term Fees vs all other school fees.
+    const sumHeads = keys => { let total = 0, paid = 0; keys.forEach(k => students.forEach(s => { const h = s.fees[k]; if (h) { total += h.total; paid += h.paid; } })); return { total, paid }; };
+    const isTermHead = k => /^term/.test(k);
+    const bizEntries = [];
+    Store.BUSINESS_ORDER.forEach(bk => {
+      const B = Store.BUSINESSES[bk];
+      const bkHeads = Store.HEAD_ORDER.filter(k => Store.businessOfHead(k) === bk);
+      if (bk === 'school') {
+        const t = sumHeads(bkHeads.filter(isTermHead));
+        const o = sumHeads(bkHeads.filter(k => !isTermHead(k)));
+        bizEntries.push({ B, name: B.name + ' — Term Fees', nav: '#/business/school?group=term', total: t.total, paid: t.paid, bal: t.total - t.paid });
+        bizEntries.push({ B, name: B.name + ' — Other Fees', nav: '#/business/school?group=other', total: o.total, paid: o.paid, bal: o.total - o.paid });
+      } else {
+        const s = sumHeads(bkHeads);
+        bizEntries.push({ B, name: B.name, nav: '#/business/' + bk, total: s.total, paid: s.paid, bal: s.total - s.paid });
+      }
     });
-    const bizCards = bizSum.map(b => `
-      <div class="card link" data-nav="#/business/${b.bk}" style="border-left:4px solid ${b.B.color}">
-        <div class="biz-head"><img class="biz-logo" src="${b.B.logo}" alt=""/><div class="k" style="margin:0">${U.esc(b.B.name)}</div></div>
+    const bizCards = bizEntries.map(b => `
+      <div class="card link" data-nav="${b.nav}" style="border-left:4px solid ${b.B.color}">
+        <div class="biz-head"><img class="biz-logo" src="${b.B.logo}" alt=""/><div class="k" style="margin:0">${U.esc(b.name)}</div></div>
         <div class="v" style="font-size:20px">${U.inr(b.paid)}</div>
         <div class="sub">of ${U.inr(b.total)} · <span style="color:${b.bal > 0 ? 'var(--red)' : 'var(--green)'}">${U.inr(b.bal)} due</span></div>
       </div>`).join('');
@@ -1172,10 +1184,15 @@
 
   /* -------------------------------------------------- Business dashboard (admin) */
   let bizState = { q: '', grade: '', head: '', sort: 'balance' };
-  function businessDashboard(key) {
+  function businessDashboard(key, params) {
     const B = Store.BUSINESSES[key];
     if (!B) { view().innerHTML = `<div class="empty">Unknown business. <a href="#/dashboard">Back to dashboard</a></div>`; return; }
-    const heads = Store.HEAD_ORDER.filter(k => Store.businessOfHead(k) === key);
+    let heads = Store.HEAD_ORDER.filter(k => Store.businessOfHead(k) === key);
+    // AKB School of Excellence can be viewed as Term Fees only or Other Fees only
+    const group = params && params.group;
+    let groupLabel = '';
+    if (key === 'school' && group === 'term') { heads = heads.filter(k => /^term/.test(k)); groupLabel = ' — Term Fees'; }
+    else if (key === 'school' && group === 'other') { heads = heads.filter(k => !/^term/.test(k)); groupLabel = ' — Other Fees'; }
     // aggregate totals for this business
     let total = 0, paid = 0;
     const today = U.todayISO();
@@ -1209,7 +1226,7 @@
         <div class="flex gap" style="align-items:center">
           <a href="#/dashboard" class="btn ghost sm">← Back</a>
           <div class="biz-head"><span class="brand-logo" style="width:46px;height:46px;box-shadow:var(--shadow)"><img src="${B.logo}" alt=""/></span>
-            <div><h1 style="margin:0">${U.esc(B.name)}</h1><p>${U.esc(B.sub)} · pending students</p></div>
+            <div><h1 style="margin:0">${U.esc(B.name + groupLabel)}</h1><p>${U.esc(B.sub)} · pending students</p></div>
           </div>
         </div>
         <div class="flex gap">
@@ -1225,7 +1242,7 @@
         <div class="card accent-amber link" id="pendingKpi"><div class="k">Pending Students</div><div class="v">${pendingCount}</div><div class="sub">click to view the list ↓</div></div>
       </div>
 
-      <div class="panel"><div class="panel-head"><h2>Fee Heads — ${U.esc(B.name)}</h2><span class="muted">Due = payable now · To be paid = upcoming months</span></div>
+      <div class="panel"><div class="panel-head"><h2>Fee Heads — ${U.esc(B.name + groupLabel)}</h2><span class="muted">Due = payable now · To be paid = upcoming months</span></div>
         <div class="table-scroll"><table>
           <thead><tr><th>Fee Head</th><th class="t-right">Total</th><th class="t-right">Paid</th><th class="t-right">Due</th><th class="t-right">To be paid</th></tr></thead>
         <tbody>${headAgg.map(h => `<tr><td><b>${U.esc(h.label)}</b></td>
@@ -1239,7 +1256,7 @@
           <td class="num" style="color:var(--primary)">${U.inr(grandFuture)}</td></tr></tfoot></table></div></div>
 
       <div class="panel" id="pendingPanel">
-        <div class="panel-head"><h2>Students with Pending ${U.esc(B.name)} Fees</h2>
+        <div class="panel-head"><h2>Students with Pending ${U.esc(B.name + groupLabel)}${groupLabel ? '' : ' Fees'}</h2>
           <div class="toolbar">
             <input id="bizQ" type="search" placeholder="name / ID / phone" value="${U.esc(bizState.q)}" style="min-width:150px"/>
             <select id="bizGrade"><option value="">All grades</option>${grades.map(g => `<option${bizState.grade === g ? ' selected' : ''}>${U.esc(g)}</option>`).join('')}</select>
@@ -1296,7 +1313,7 @@
     };
     $('#bizPrint').onclick = () => {
       const rows = filtered();
-      const filterNote = [bizState.grade ? 'Class: ' + bizState.grade : '', bizState.head ? Store.HEAD_LABELS[bizState.head] : '', bizState.q ? 'Search: "' + bizState.q + '"' : '']
+      const filterNote = [groupLabel ? groupLabel.replace(/^\s*—\s*/, '') : '', bizState.grade ? 'Class: ' + bizState.grade : '', bizState.head ? Store.HEAD_LABELS[bizState.head] : '', bizState.q ? 'Search: "' + bizState.q + '"' : '']
         .filter(Boolean).join(' · ');
       printPendingList(B, heads, rows, pendingHeadBal, filterNote);
     };
