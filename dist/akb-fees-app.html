@@ -2638,6 +2638,9 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     let groupLabel = '';
     if (key === 'school' && group === 'term') { heads = heads.filter(k => /^term/.test(k)); groupLabel = ' — Term Fees'; }
     else if (key === 'school' && group === 'other') { heads = heads.filter(k => !/^term/.test(k)); groupLabel = ' — Other Fees'; }
+    // when a firm has multiple fee heads, show a leading "Total" column (sum billed)
+    const multiHead = heads.length > 1;
+    const totalLabel = (key === 'school' && group === 'term') ? 'Total Term Fees' : 'Total';
     // aggregate totals for this business
     let total = 0, paid = 0;
     const today = U.todayISO();
@@ -2710,7 +2713,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
             <select id="bizSort"><option value="balance"${bizState.sort === 'balance' ? ' selected' : ''}>Sort: Pending ↓</option><option value="name"${bizState.sort === 'name' ? ' selected' : ''}>Sort: Name</option><option value="grade"${bizState.sort === 'grade' ? ' selected' : ''}>Sort: Grade</option><option value="paid"${bizState.sort === 'paid' ? ' selected' : ''}>Sort: Paid ↓</option></select>
           </div></div>
         <div class="table-scroll"><table>
-          <thead><tr><th>Student</th><th>Grade</th><th>Contact</th>${heads.map(k => `<th class="t-right">${U.esc(Store.HEAD_LABELS[k])}</th>`).join('')}<th class="t-right">Paid</th><th class="t-right">Pending</th><th></th></tr></thead>
+          <thead><tr><th>Student</th><th>Grade</th><th>Contact</th>${multiHead ? `<th class="t-right">${U.esc(totalLabel)}</th>` : ''}${heads.map(k => `<th class="t-right">${U.esc(Store.HEAD_LABELS[k])}</th>`).join('')}<th class="t-right">Paid</th><th class="t-right">Pending</th><th></th></tr></thead>
           <tbody id="bizBody"></tbody></table></div>
         <div class="panel-body pad" id="bizFoot"></div>
       </div>
@@ -2742,11 +2745,12 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       $('#bizBody').innerHTML = rows.slice(0, 1000).map(r => `<tr class="clickable" data-id="${U.esc(r.s.id)}">
         <td><b>${U.esc(r.s.name)}</b><div class="muted" style="font-size:11px">ID ${U.esc(r.s.id)} · ${U.esc(r.s.father || '')}</div></td>
         <td>${U.esc(r.s.grade || '')}</td><td class="mono">${U.esc(r.s.contact || '')}</td>
-        ${heads.map(k => { const b = pendingHeadBal(r.s, k); return `<td class="num" style="color:${b > 0 ? 'var(--red)' : 'var(--muted)'}">${U.inr(b)}</td>`; }).join('')}
+        ${multiHead ? `<td class="num" style="font-weight:600">${U.inr(bizTotal(r.s))}</td>` : ''}
+        ${heads.map(k => { const bill = (r.s.fees[k] || {}).total || 0; return `<td class="num">${U.inr(bill)}</td>`; }).join('')}
         <td class="num" style="color:var(--green)">${U.inr(bizPaid(r.s))}</td>
         <td class="num" style="color:var(--red);font-weight:700">${U.inr(r.bal)}</td>
         <td class="t-right">${remindIcon(r.s)}<button class="btn green sm" data-pay="${U.esc(r.s.id)}">Collect</button></td></tr>`).join('')
-        || `<tr><td colspan="${5 + heads.length}" class="empty">No students pending for ${U.esc(B.name)} 🎉</td></tr>`;
+        || `<tr><td colspan="${7 + heads.length}" class="empty">No students pending for ${U.esc(B.name)} 🎉</td></tr>`;
       const sum = rows.reduce((a, r) => a + r.bal, 0);
       $('#bizFoot').innerHTML = `<b>${rows.length}</b> pending students · Outstanding <b style="color:var(--red)">${U.inr(sum)}</b>`;
       $$('#bizBody [data-id]').forEach(tr => tr.onclick = e => { if (e.target.dataset.pay) return; location.hash = '#/student/' + encodeURIComponent(tr.dataset.id); });
@@ -2759,8 +2763,8 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     $('#bizSort').onchange = e => { bizState.sort = e.target.value; draw(); };
     $('#bizExp').onclick = () => {
       const rows = filtered();
-      const out = [['Student ID', 'Name', 'Grade', 'Father', 'Contact'].concat(heads.map(k => Store.HEAD_LABELS[k] + ' Pending')).concat(['Paid', 'Total Pending'])];
-      rows.forEach(r => out.push([r.s.id, r.s.name, r.s.grade, r.s.father, r.s.contact].concat(heads.map(k => pendingHeadBal(r.s, k))).concat([bizPaid(r.s), r.bal])));
+      const out = [['Student ID', 'Name', 'Grade', 'Father', 'Contact'].concat(multiHead ? [totalLabel] : []).concat(heads.map(k => Store.HEAD_LABELS[k])).concat(['Paid', 'Pending'])];
+      rows.forEach(r => out.push([r.s.id, r.s.name, r.s.grade, r.s.father, r.s.contact].concat(multiHead ? [bizTotal(r.s)] : []).concat(heads.map(k => (r.s.fees[k] || {}).total || 0)).concat([bizPaid(r.s), r.bal])));
       U.download('akb_' + key + '_pending.csv', U.toCSV(out), 'text/csv'); U.toast('Exported ' + rows.length + ' rows', 'success');
     };
     $('#bizPrint').onclick = () => {
@@ -2768,7 +2772,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       const filterNote = [groupLabel ? groupLabel.replace(/^\s*—\s*/, '') : '', bizState.grade ? 'Class: ' + bizState.grade : '', bizState.head ? Store.HEAD_LABELS[bizState.head] : '',
         bizState.paid === 'zero' ? 'Paid = ₹0' : (bizState.paid === 'part' ? 'Paid > ₹0' : ''), bizState.q ? 'Search: "' + bizState.q + '"' : '']
         .filter(Boolean).join(' · ');
-      printPendingList(B, heads, rows, pendingHeadBal, filterNote, bizPaid);
+      printPendingList(B, heads, rows, pendingHeadBal, filterNote, bizPaid, { totalLabel, showTotal: multiHead });
     };
     draw();
     bindNav();
@@ -2786,21 +2790,27 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
   }
 
   // Printable list of pending students for a firm/business (respects current filters)
-  function printPendingList(B, heads, rows, pendingHeadBal, filterNote, paidOf) {
+  function printPendingList(B, heads, rows, pendingHeadBal, filterNote, paidOf, opts) {
     paidOf = paidOf || (s => heads.reduce((a, k) => a + ((s.fees[k] || {}).paid || 0), 0));
+    const showTotal = !!(opts && opts.showTotal);
+    const totalLabel = (opts && opts.totalLabel) || 'Total';
+    const billed = (s, k) => (s.fees[k] || {}).total || 0;
+    const totalOf = s => heads.reduce((a, k) => a + billed(s, k), 0);
+    const perHead = heads.length > 1;   // show a column per head only when there are several
     const school = (Store.meta && Store.meta.school) || 'AKB School of Excellence';
     const dt = U.fmtDate(U.todayISO());
     const grand = rows.reduce((a, r) => a + r.bal, 0);
     const paidSum = rows.reduce((a, r) => a + paidOf(r.s), 0);
     const base = location.origin + location.pathname.replace(/[^/]*$/, '');
-    const headTh = heads.length > 1 ? heads.map(k => `<th class="num">${U.esc(Store.HEAD_LABELS[k])}</th>`).join('') : '';
-    const colSpan = 4 + (heads.length > 1 ? heads.length : 0) + 2;
+    const headTh = (showTotal ? `<th class="num">${U.esc(totalLabel)}</th>` : '') + (perHead ? heads.map(k => `<th class="num">${U.esc(Store.HEAD_LABELS[k])}</th>`).join('') : '');
+    const colSpan = 4 + (showTotal ? 1 : 0) + (perHead ? heads.length : 0) + 2;
     const body = rows.map((r, i) => `<tr>
       <td class="c">${i + 1}</td>
       <td><b>${U.esc(r.s.name)}</b><div class="sub">ID ${U.esc(r.s.id)}${r.s.father ? ' · ' + U.esc(r.s.father) : ''}</div></td>
       <td class="c">${U.esc(r.s.grade || '')}</td>
       <td>${U.esc(r.s.contact || '')}</td>
-      ${heads.length > 1 ? heads.map(k => { const b = pendingHeadBal(r.s, k); return `<td class="num">${b > 0 ? U.inr(b) : '—'}</td>`; }).join('') : ''}
+      ${showTotal ? `<td class="num">${U.inr(totalOf(r.s))}</td>` : ''}
+      ${perHead ? heads.map(k => `<td class="num">${U.inr(billed(r.s, k))}</td>`).join('') : ''}
       <td class="num">${U.inr(paidOf(r.s))}</td>
       <td class="num due">${U.inr(r.bal)}</td></tr>`).join('')
       || `<tr><td colspan="${colSpan}" style="text-align:center;padding:24px">No pending students 🎉</td></tr>`;
