@@ -1178,11 +1178,23 @@
     const heads = Store.HEAD_ORDER.filter(k => Store.businessOfHead(k) === key);
     // aggregate totals for this business
     let total = 0, paid = 0;
+    const today = U.todayISO();
     const headAgg = heads.map(k => {
-      let t = 0, p = 0; Store.students.forEach(s => { const h = s.fees[k]; if (h) { t += h.total; p += h.paid; } });
-      total += t; paid += p; return { k, label: Store.HEAD_LABELS[k], t, p, bal: t - p };
+      let t = 0, p = 0, due = 0, future = 0;
+      Store.students.forEach(s => { const h = s.fees[k]; if (h) { t += h.total; p += h.paid; } });
+      if (k === 'transport') {
+        // split outstanding by month: started-&-unpaid = Due, not-yet-reached = To be paid
+        Store.students.forEach(s => Store.transportBreakdown(s).forEach(m => {
+          if (m.balance > 0) { if ((m.key + '-01') <= today) due += m.balance; else future += m.balance; }
+        }));
+      } else {
+        due = t - p; // lump-sum fees are payable now
+      }
+      total += t; paid += p; return { k, label: Store.HEAD_LABELS[k], t, p, due, future, bal: t - p };
     });
     const outstanding = total - paid;
+    const grandDue = headAgg.reduce((a, h) => a + h.due, 0);
+    const grandFuture = headAgg.reduce((a, h) => a + h.future, 0);
     const bizBal = s => heads.reduce((a, k) => a + ((s.fees[k] || {}).balance || 0), 0);
     const bizPaid = s => heads.reduce((a, k) => a + ((s.fees[k] || {}).paid || 0), 0);
     const bizTotal = s => heads.reduce((a, k) => a + ((s.fees[k] || {}).total || 0), 0);
@@ -1209,14 +1221,22 @@
       <div class="cards">
         ${kpi('Billed', U.inr(total), { accent: 'blue' })}
         ${kpi('Collected', U.inr(paid), { accent: 'green', sub: (total ? Math.round(paid / total * 100) : 0) + '% collected' })}
-        <div class="card accent-red link" id="outstandingKpi"><div class="k">Outstanding</div><div class="v">${U.inr(outstanding)}</div><div class="sub">click for pending students</div></div>
+        <div class="card accent-red link" id="outstandingKpi"><div class="k">Outstanding</div><div class="v">${U.inr(outstanding)}</div><div class="sub">Due ${U.inr(grandDue)}${grandFuture > 0 ? ' · To be paid ' + U.inr(grandFuture) : ''}</div></div>
         <div class="card accent-amber link" id="pendingKpi"><div class="k">Pending Students</div><div class="v">${pendingCount}</div><div class="sub">click to view the list ↓</div></div>
       </div>
 
-      <div class="panel"><div class="panel-head"><h2>Fee Heads — ${U.esc(B.name)}</h2></div>
-        <div class="table-scroll"><table><thead><tr><th>Fee Head</th><th class="t-right">Billed</th><th class="t-right">Collected</th><th class="t-right">Outstanding</th></tr></thead>
-        <tbody>${headAgg.map(h => `<tr><td><b>${U.esc(h.label)}</b></td><td class="num">${U.inr(h.t)}</td><td class="num" style="color:var(--green)">${U.inr(h.p)}</td><td class="num" style="color:${h.bal > 0 ? 'var(--red)' : 'var(--muted)'}">${U.inr(h.bal)}</td></tr>`).join('')}</tbody>
-        <tfoot><tr style="font-weight:700;background:#f8fafc"><td>TOTAL</td><td class="num">${U.inr(total)}</td><td class="num" style="color:var(--green)">${U.inr(paid)}</td><td class="num" style="color:var(--red)">${U.inr(outstanding)}</td></tr></tfoot></table></div></div>
+      <div class="panel"><div class="panel-head"><h2>Fee Heads — ${U.esc(B.name)}</h2><span class="muted">Due = payable now · To be paid = upcoming months</span></div>
+        <div class="table-scroll"><table>
+          <thead><tr><th>Fee Head</th><th class="t-right">Total</th><th class="t-right">Paid</th><th class="t-right">Due</th><th class="t-right">To be paid</th></tr></thead>
+        <tbody>${headAgg.map(h => `<tr><td><b>${U.esc(h.label)}</b></td>
+          <td class="num">${U.inr(h.t)}</td>
+          <td class="num" style="color:var(--green)">${U.inr(h.p)}</td>
+          <td class="num" style="color:${h.due > 0 ? 'var(--red)' : 'var(--muted)'};font-weight:600">${U.inr(h.due)}</td>
+          <td class="num" style="color:${h.future > 0 ? 'var(--primary)' : 'var(--muted)'}">${U.inr(h.future)}</td></tr>`).join('')}</tbody>
+        <tfoot><tr style="font-weight:700;background:#f8fafc"><td>TOTAL</td><td class="num">${U.inr(total)}</td>
+          <td class="num" style="color:var(--green)">${U.inr(paid)}</td>
+          <td class="num" style="color:var(--red)">${U.inr(grandDue)}</td>
+          <td class="num" style="color:var(--primary)">${U.inr(grandFuture)}</td></tr></tfoot></table></div></div>
 
       <div class="panel" id="pendingPanel">
         <div class="panel-head"><h2>Students with Pending ${U.esc(B.name)} Fees</h2>
