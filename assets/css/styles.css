@@ -263,19 +263,25 @@ tr.row-absent{background:var(--red-l)}
 .donut-legend span{display:flex;align-items:center;gap:8px}
 .donut-legend i{width:13px;height:13px;border-radius:3px;display:inline-block}
 
-/* ===== Print (receipt) ===== */
+/* ===== Print (receipt) — A5 pages, no browser header/footer ===== */
+/* margin:0 removes Chrome's auto date/title/URL/page-number in the margins */
+@page{ size:A5; margin:0; }
 @media print{
-  body{background:#fff}
+  html,body{overflow:hidden!important;background:#fff;margin:0!important;padding:0!important;width:148mm}
   #toastRoot,#authRoot,.no-print{display:none!important}
   .sidebar,.topbar{display:none!important}
   .main{margin:0!important}
   .view{padding:0;max-width:none}
   /* When a receipt is open, print ONLY the receipt — hide the page behind it */
   body.receipt-open #app{display:none!important}
-  .modal-backdrop{position:static;background:none;padding:0;display:block}
-  .modal{box-shadow:none;max-width:none;width:auto}
+  .modal-backdrop{position:static;background:none;padding:0;margin:0;display:block}
+  .modal{box-shadow:none;max-width:none;width:auto;margin:0;border:none;background:none}
+  .modal-body{padding:0!important;overflow:visible!important}
   .modal-head,.modal-foot{display:none!important}
-  .receipt{box-shadow:none!important;border:none!important;page-break-after:always}
+  /* one receipt per A5 page, edge-to-edge with a small inner padding */
+  .receipt{box-shadow:none!important;border:none!important;border-radius:0!important;
+    width:148mm!important;max-width:148mm!important;min-height:207mm;margin:0!important;
+    padding:10mm 12mm!important;box-sizing:border-box;page-break-after:always}
   .receipt:last-child{page-break-after:auto}
 }
 
