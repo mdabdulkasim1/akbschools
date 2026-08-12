@@ -41,10 +41,7 @@
       ${rec.remarks ? `<div style="font-size:12px;color:#333;margin-bottom:3px"><b>Remarks:</b> ${U.esc(rec.remarks)}</div>` : ''}
       <div style="font-size:12px;color:#b91c1c;margin-bottom:14px"><b>Student's remaining balance (all fees):</b> ${U.inr(totals.balance)}</div>
 
-      <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:30px">
-        <div style="font-size:11px;color:#777">Computer-generated receipt · ${U.esc(B.name)}</div>
-        <div style="text-align:center;font-size:12px"><div style="border-top:1px solid #333;padding-top:4px;width:150px">Authorised Signatory</div></div>
-      </div>
+      <div style="margin-top:26px;text-align:center;font-size:11px;color:#777;font-style:italic">This is a computer-generated receipt; no need for a signature</div>
     </div>`;
   }
 
