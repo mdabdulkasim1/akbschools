@@ -45,7 +45,8 @@
     };
   }
 
-  function logout() {
+  async function logout() {
+    try { await Store.flush(); } catch (e) {}   // save any pending change before leaving
     Store.setSession(null);
     location.hash = '#/dashboard';
     showLogin((u) => w.Router.start(u));

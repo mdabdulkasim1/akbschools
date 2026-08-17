@@ -121,7 +121,7 @@
   let db = null;
   let useIDB = true;
   // server-shared-state mode (set at init if /api/state is reachable)
-  let serverMode = false, baseVersion = 0, syncTimer = null, syncing = false, syncAgain = false;
+  let serverMode = false, baseVersion = 0, syncTimer = null, syncing = false, syncAgain = false, dirty = false;
 
   const Store = {
     students: [],   // in-memory cache
@@ -176,6 +176,20 @@
       this.migrateLegacyHeads(); this.ensureStudentHeads();
       await this.persist(); // pushes seed/migration to server (or writes locally)
       this.recomputeAll();
+
+      // save any pending change before the tab is closed/hidden so the last
+      // transaction is never lost (keepalive lets the request finish on unload)
+      if (typeof window !== 'undefined' && !this._unloadHooked) {
+        this._unloadHooked = true;
+        const beacon = () => {
+          if (!serverMode || !dirty) return;
+          try {
+            fetch('api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, keepalive: true, body: JSON.stringify({ baseVersion, state: this._snapshot() }) }).then(() => { dirty = false; }).catch(() => {});
+          } catch (e) {}
+        };
+        window.addEventListener('pagehide', beacon);
+        window.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') beacon(); });
+      }
       return this;
     },
 
@@ -192,7 +206,11 @@
       this.recomputeAll();
     },
     async persist() {
-      if (serverMode) { this._scheduleSync(); return; }
+      if (serverMode) {
+        this._scheduleSync();
+        this._mirrorLocal(); // keep a local copy so this device can recover if the server resets
+        return;
+      }
       if (useIDB) {
         await idbClear('students'); await idbPutMany('students', this.students);
         await idbClear('payments'); await idbPutMany('payments', this.payments);
@@ -205,7 +223,21 @@
         LS.setItem('akb_meta', JSON.stringify(this.meta));
       }
     },
-    _scheduleSync() { clearTimeout(syncTimer); syncTimer = setTimeout(() => this._syncNow(), 350); },
+    // best-effort background copy of the shared state into this browser's IndexedDB
+    _mirrorLocal() {
+      if (!useIDB) return;
+      Promise.resolve().then(async () => {
+        try {
+          if (!db) { db = await openDB().catch(() => null); }
+          if (!db) return;
+          await idbClear('students'); await idbPutMany('students', this.students);
+          await idbClear('payments'); await idbPutMany('payments', this.payments);
+          await idbClear('users'); await idbPutMany('users', this.users);
+          await idbPut('meta', { id: 'meta', value: this.meta });
+        } catch (e) { /* mirror is best-effort */ }
+      });
+    },
+    _scheduleSync() { dirty = true; clearTimeout(syncTimer); syncTimer = setTimeout(() => this._syncNow(), 350); },
     async _syncNow() {
       if (syncing) { syncAgain = true; return; }
       syncing = true;
@@ -215,10 +247,16 @@
           this._applyServer(await r.json());
           U.toast('Reloaded latest data (another device was editing)', 'error');
           if (w.Router && w.Router.render) w.Router.render();
-        } else if (r.ok) { baseVersion = (await r.json()).version; }
+        } else if (r.ok) { baseVersion = (await r.json()).version; dirty = false; }
       } catch (e) { /* offline — will retry on next change */ }
       syncing = false;
       if (syncAgain) { syncAgain = false; this._scheduleSync(); }
+    },
+    // force any pending change to the server now (called on logout / tab close)
+    async flush() {
+      if (!serverMode || !dirty) return;
+      if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
+      await this._syncNow();
     },
 
     async load() {
