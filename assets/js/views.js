@@ -757,7 +757,7 @@
   function openEditModal(id) {
     const s = Store.getStudent(id); if (!s) return;
     const root = document.getElementById('modalRoot');
-    const feeInputs = Store.HEAD_ORDER.filter(k => k !== 'transport').map(k => {
+    const feeInputs = Store.HEAD_ORDER.filter(k => k !== 'transport' && Store.MULTI_HEADS.indexOf(k) < 0).map(k => {
       const h = s.fees[k];
       return `<div class="fee-row" style="grid-template-columns:1.4fr 1fr 1fr">
         <div class="fh-label">${U.esc(h.label)}</div>
@@ -775,6 +775,17 @@
         <input type="number" min="0" step="1" data-tr-paid="${m.key}" value="${m.paid}" title="Paid"/>
       </div>`).join('')}
       <p class="muted" style="font-size:12px;margin-top:6px">Tip: set the same monthly fee across Apr–Mar. The Transport Fees total on dashboards is the sum of these months.</p>`;
+    // Event & Extra-Curricular — a grid per named item (admin can add more)
+    const subGrids = Store.MULTI_HEADS.filter(k => Store.HEAD_ORDER.indexOf(k) >= 0).map(k => {
+      const label = Store.HEAD_LABELS[k];
+      return `<h4 class="sec">${U.esc(label)} — by item <button class="btn sm" data-editaddsub="${k}" style="margin-left:8px">＋ Add item</button></h4>
+        <div class="fee-head-hdr" style="grid-template-columns:1.4fr 1fr 1fr"><span>Item</span><span>Total</span><span>Paid</span></div>
+        ${Store.subBreakdown(s, k).map(it => `<div class="fee-row" style="grid-template-columns:1.4fr 1fr 1fr">
+          <div class="fh-label">${U.esc(it.label)}</div>
+          <input type="number" min="0" step="1" data-sub-total="${k}::${it.key}" value="${it.total}" title="Total"/>
+          <input type="number" min="0" step="1" data-sub-paid="${k}::${it.key}" value="${it.paid}" title="Paid"/>
+        </div>`).join('')}`;
+    }).join('');
     root.innerHTML = `
       <div class="modal-backdrop" id="edBackdrop"><div class="modal wide">
         <div class="modal-head"><h3>Edit — ${U.esc(s.name)}</h3><button class="x-close" id="edClose">&times;</button></div>
@@ -816,6 +827,7 @@
           <div class="fee-head-hdr"><span></span><span>Total</span><span>Paid</span></div>
           ${feeInputs}
           ${transportGrid}
+          ${subGrids}
           <p class="muted" style="font-size:12px;margin-top:8px">Editing “Paid” here adjusts the opening amount directly (no receipt is generated). Use <b>Receive Payment</b> for normal collections.</p>
         </div>
         <div class="modal-foot"><button class="btn" id="edCancel">Cancel</button><button class="btn primary" id="edSave">Save changes</button></div>
@@ -839,7 +851,7 @@
       s.marks = s.marks || {};
       ['english', 'maths', 'science'].forEach(m => { const el = $(`[data-f="mk_${m}"]`, root); if (el) s.marks[m] = el.value.trim(); });
       Store.HEAD_ORDER.forEach(k => {
-        if (k === 'transport') return; // handled via the monthly grid below
+        if (k === 'transport' || Store.MULTI_HEADS.indexOf(k) >= 0) return; // handled via their own grids below
         const tt = $(`[data-fee-total="${k}"]`, root), pp = $(`[data-fee-paid="${k}"]`, root);
         if (tt) s.fees[k].total = Number(tt.value) || 0;
         if (pp) s.fees[k].paid = Number(pp.value) || 0;
@@ -850,9 +862,24 @@
         const tt = $(`[data-tr-total="${m.key}"]`, root), pp = $(`[data-tr-paid="${m.key}"]`, root);
         s.transport[m.key] = { total: tt ? Number(tt.value) || 0 : 0, paid: pp ? Number(pp.value) || 0 : 0 };
       });
+      // event & extra-curricular sub-item grids
+      Store.ensureSubs(s);
+      Store.MULTI_HEADS.forEach(k => {
+        if (Store.HEAD_ORDER.indexOf(k) < 0) return;
+        Store.subItems(k).forEach(it => {
+          const tt = $(`[data-sub-total="${k}::${it.key}"]`, root), pp = $(`[data-sub-paid="${k}::${it.key}"]`, root);
+          s.subs[k][it.key] = { total: tt ? Number(tt.value) || 0 : 0, paid: pp ? Number(pp.value) || 0 : 0 };
+        });
+      });
       await Store.saveStudent(s);
       close(); U.toast('Saved', 'success'); studentDetail(id);
     };
+    $$('[data-editaddsub]', root).forEach(b => b.onclick = async () => {
+      const name = prompt('Add a new ' + (Store.HEAD_LABELS[b.dataset.editaddsub] || 'item') + ':');
+      if (!name || !name.trim()) return;
+      try { await Store.addSubItem(b.dataset.editaddsub, name.trim()); close(); openEditModal(id); }
+      catch (e) { U.toast(e.message, 'error'); }
+    });
   }
   function textField(label, key, val, type) {
     return `<div class="field"><label>${U.esc(label)}</label><input ${type ? 'type="' + type + '" ' : ''}data-f="${key}" value="${U.esc(val == null ? '' : val)}"/></div>`;
@@ -869,8 +896,9 @@
         <input type="checkbox" class="fh-chk" data-key="${o.key}" ${o.due ? 'checked' : ''}/>
         <div><div class="fh-label">${U.esc(o.label)}</div><div class="muted" style="font-size:11px">${o.sub}</div></div>
         <div class="fh-bal">Bal ${U.inr(o.balance)}</div>
-        <input type="number" class="fh-amt" data-key="${o.key}" data-head="${o.head}"${o.month ? ` data-month="${o.month}"` : ''} min="0" step="1" value="${o.due ? Math.max(0, o.balance) : 0}" ${o.due ? '' : 'disabled'}/>
+        <input type="number" class="fh-amt" data-key="${o.key}" data-head="${o.head}"${o.month ? ` data-month="${o.month}"` : ''}${o.subKey ? ` data-sub="${o.subKey}"` : ''} min="0" step="1" value="${o.due ? Math.max(0, o.balance) : 0}" ${o.due ? '' : 'disabled'}/>
       </div>`;
+    const groupEmoji = { event: '🎉', extra_curricular: '🎨' };
     const rows = Store.HEAD_ORDER.map(k => {
       const B = Store.BUSINESSES[Store.businessOfHead(k)];
       if (k === 'transport') {
@@ -883,6 +911,16 @@
           return feeRowHtml({ key: 'transport::' + m.key, head: 'transport', month: m.key, label: 'Transport — ' + m.label, sub: B.name + ' · ' + status, balance: m.balance, due });
         }).join('');
         return `<div class="fee-group"><div class="fee-group-hd">🚌 Transport Fees — Monthly <span class="muted">(tick the month(s) to collect)</span></div>${monthRows}</div>`;
+      }
+      if (Store.MULTI_HEADS.indexOf(k) >= 0) {
+        // event / extra-curricular — one selectable row per named item
+        const label = Store.HEAD_LABELS[k];
+        const itemRows = Store.subBreakdown(s, k).map(it => {
+          const due = it.balance > 0;
+          const status = it.total > 0 ? `paid ${U.inr(it.paid)}/${U.inr(it.total)}` : 'not set — tick to add';
+          return feeRowHtml({ key: k + '::' + it.key, head: k, subKey: it.key, label: label + ' — ' + it.label, sub: B.name + ' · ' + status, balance: it.balance, due });
+        }).join('');
+        return `<div class="fee-group"><div class="fee-group-hd">${groupEmoji[k] || ''} ${U.esc(label)} <span class="muted">(pick the item to collect)</span> <button class="btn sm" data-addsub="${k}" style="margin-left:auto">＋ Add</button></div>${itemRows}</div>`;
       }
       const h = s.fees[k]; const due = h.balance > 0;
       const status = h.total > 0 ? `Paid ${U.inr(h.paid)} of ${U.inr(h.total)}` : 'Not applied — tick to add & collect';
@@ -915,11 +953,18 @@
     recalc();
     $('#payClose', root).onclick = close; $('#payCancel', root).onclick = close;
     $('#payBackdrop', root).onclick = e => { if (e.target.id === 'payBackdrop') close(); };
+    $$('[data-addsub]', root).forEach(b => b.onclick = async () => {
+      if (!Store.isAdmin()) { U.toast('Only admin can add items', 'error'); return; }
+      const name = prompt('Add a new ' + (Store.HEAD_LABELS[b.dataset.addsub] || 'item') + ':');
+      if (!name || !name.trim()) return;
+      try { await Store.addSubItem(b.dataset.addsub, name.trim()); close(); openPaymentModal(studentId); }
+      catch (e) { U.toast(e.message, 'error'); }
+    });
     $('#paySave', root).onclick = async () => {
       const items = [];
       $$('.fh-amt', root).forEach(inp => {
         const chk = $(`.fh-chk[data-key="${inp.dataset.key}"]`, root); const amt = Number(inp.value) || 0;
-        if (chk && chk.checked && amt > 0) { const it = { head: inp.dataset.head, amount: amt }; if (inp.dataset.month) it.month = inp.dataset.month; items.push(it); }
+        if (chk && chk.checked && amt > 0) { const it = { head: inp.dataset.head, amount: amt }; if (inp.dataset.month) it.month = inp.dataset.month; if (inp.dataset.sub) it.sub = inp.dataset.sub; items.push(it); }
       });
       if (!items.length) { U.toast('Enter at least one amount', 'error'); return; }
       const recs = await Store.addPayment({ studentId, date: $('#payDate', root).value, mode: $('#payMode', root).value, remarks: $('#payRemarks', root).value, items });

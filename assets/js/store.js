@@ -59,6 +59,13 @@
     for (let i = 0; i < 12; i++) { out.push({ key: y + '-' + pad2(m), label: MONTH_NAMES[m - 1] + ' ' + y }); m++; if (m > 12) { m = 1; y++; } }
     return out;
   }
+  // Fee heads split into admin-managed named sub-items (dropdowns). The single
+  // head is the roll-up of student.subs[head] = { itemKey: {total, paid} }.
+  const MULTI_HEADS = ['event', 'extra_curricular'];
+  const DEFAULT_SUB_ITEMS = {
+    event: [{ key: 'event1', label: 'Event 1' }, { key: 'event2', label: 'Event 2' }],
+    extra_curricular: [{ key: 'summer_camp', label: 'Summer Camp' }, { key: 'olympiad', label: 'Olympiad Exam' }]
+  };
   // These are kept in sync (mutated in place) by rebuildHeads() from the active
   // fee-head config, so views that read Store.HEAD_ORDER/HEAD_LABELS stay current.
   const HEAD_ORDER = [];
@@ -132,7 +139,7 @@
     currentUser: null,
     ENTITIES, MODES, HEAD_ORDER, HEAD_LABELS, BUSINESS, BUSINESSES, BUSINESS_ORDER, HEAD_BUSINESS,
     SCHOOL_WHATSAPP, SCHOOL_WHATSAPP_DISPLAY, DEFAULT_FEE_HEADS,
-    REPORT, isKG,
+    REPORT, isKG, MULTI_HEADS,
 
     serverMode() { return serverMode; },
 
@@ -320,12 +327,82 @@
         this.transportMonths().forEach(mm => { const c = s.transport[mm.key] || {}; t += Number(c.total) || 0; p += Number(c.paid) || 0; });
         if (s.fees[TRANSPORT_HEAD]) { s.fees[TRANSPORT_HEAD].total = t; s.fees[TRANSPORT_HEAD].paid = p; }
       }
+      // Event & Extra-Curricular heads roll up from their named sub-items.
+      MULTI_HEADS.forEach(head => {
+        if (HEAD_ORDER.indexOf(head) < 0) return;
+        this.ensureSubs(s);
+        let t = 0, p = 0; const bag = (s.subs && s.subs[head]) || {};
+        Object.keys(bag).forEach(k => { t += Number(bag[k].total) || 0; p += Number(bag[k].paid) || 0; });
+        if (s.fees[head]) { s.fees[head].total = t; s.fees[head].paid = p; }
+      });
       HEAD_ORDER.forEach(k => {
         const h = s.fees[k]; if (!h) return;
         h.balance = Math.round(((Number(h.total) || 0) - (Number(h.paid) || 0)) * 100) / 100;
       });
     },
     recomputeAll() { this.students.forEach(s => this.recompute(s)); },
+
+    /* ---- multi-item fee heads (Event, Extra-Curricular): admin-managed named sub-items ---- */
+    subItems(head) {
+      const m = (this.meta.subItems || {})[head];
+      return (Array.isArray(m) && m.length) ? m : (DEFAULT_SUB_ITEMS[head] || []).map(x => Object.assign({}, x));
+    },
+    _subList(head) { // the mutable, persisted list (seed from defaults on first use)
+      this.meta.subItems = this.meta.subItems || {};
+      if (!Array.isArray(this.meta.subItems[head]) || !this.meta.subItems[head].length) this.meta.subItems[head] = this.subItems(head).slice();
+      return this.meta.subItems[head];
+    },
+    _slugSub(head, label) {
+      let base = String(label).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'item';
+      const list = this.subItems(head); let k = base, i = 2;
+      while (list.some(x => x.key === k)) k = base + '_' + (i++);
+      return k;
+    },
+    async addSubItem(head, label) {
+      label = String(label || '').trim(); if (!label) throw new Error('Name is required');
+      const list = this._subList(head);
+      if (list.some(x => x.label.toLowerCase() === label.toLowerCase())) throw new Error('That item already exists');
+      list.push({ key: this._slugSub(head, label), label });
+      this.recomputeAll(); await this.persist();
+    },
+    async renameSubItem(head, key, label) {
+      label = String(label || '').trim(); if (!label) throw new Error('Name is required');
+      const it = this._subList(head).find(x => x.key === key); if (it) it.label = label;
+      await this.persist();
+    },
+    async removeSubItem(head, key) {
+      const list = this._subList(head);
+      this.meta.subItems[head] = list.filter(x => x.key !== key);
+      this.students.forEach(s => { if (s.subs && s.subs[head]) delete s.subs[head][key]; });
+      this.recomputeAll(); await this.persist();
+    },
+    // ensure a student has an entry for every configured sub-item (migrating any
+    // legacy single-head amount into a "General" item so nothing is lost)
+    ensureSubs(s) {
+      s.subs = s.subs || {};
+      MULTI_HEADS.forEach(head => {
+        if (HEAD_ORDER.indexOf(head) < 0) return;
+        s.subs[head] = s.subs[head] || {};
+        const hasData = Object.keys(s.subs[head]).length > 0;
+        const headObj = s.fees && s.fees[head];
+        if (!hasData && headObj && ((Number(headObj.total) || 0) > 0 || (Number(headObj.paid) || 0) > 0)) {
+          const list = this._subList(head);
+          if (!list.some(x => x.key === 'general')) list.unshift({ key: 'general', label: 'General' });
+          s.subs[head]['general'] = { total: Number(headObj.total) || 0, paid: Number(headObj.paid) || 0 };
+        }
+        this.subItems(head).forEach(it => { const c = s.subs[head][it.key] || {}; s.subs[head][it.key] = { total: Number(c.total) || 0, paid: Number(c.paid) || 0 }; });
+      });
+      return s.subs;
+    },
+    subBreakdown(s, head) {
+      this.ensureSubs(s);
+      return this.subItems(head).map(it => { const c = (s.subs[head] || {})[it.key] || { total: 0, paid: 0 }; return { key: it.key, label: it.label, total: Number(c.total) || 0, paid: Number(c.paid) || 0, balance: (Number(c.total) || 0) - (Number(c.paid) || 0) }; });
+    },
+    async setSubs(s, head, data) {
+      this.ensureSubs(s);
+      this.subItems(head).forEach(it => { const c = (data && data[it.key]) || {}; s.subs[head][it.key] = { total: Number(c.total) || 0, paid: Number(c.paid) || 0 }; });
+      await this.saveStudent(s);
+    },
 
     /* ---- transport (monthly, Apr → Mar) ---- */
     transportMonths() { return buildTransportMonths(this.meta && this.meta.year); },
@@ -400,6 +477,15 @@
           student.transport[it.month] = mm;
           const ml = (this.transportMonths().find(x => x.key === it.month) || {}).label || it.month;
           label = (HEAD_LABELS[TRANSPORT_HEAD] || 'Transport Fees') + ' – ' + ml;
+        } else if (MULTI_HEADS.indexOf(it.head) >= 0 && it.sub) {
+          // event / extra-curricular collection → apply to that named item
+          this.ensureSubs(student);
+          const c = student.subs[it.head][it.sub] || { total: 0, paid: 0 };
+          c.paid = (Number(c.paid) || 0) + amt;
+          c.total = Math.max(Number(c.total) || 0, c.paid);
+          student.subs[it.head][it.sub] = c;
+          const sl = (this.subItems(it.head).find(x => x.key === it.sub) || {}).label || it.sub;
+          label = (HEAD_LABELS[it.head] || it.head) + ' – ' + sl;
         } else {
           const h = student.fees[it.head];
           if (h) {
@@ -411,6 +497,7 @@
         }
         const item = { head: it.head, label, amount: amt };
         if (it.month) item.month = it.month;
+        if (it.sub) item.sub = it.sub;
         (groups[biz] = groups[biz] || []).push(item);
       });
       this.recompute(student);
@@ -449,6 +536,9 @@
           if (it.head === TRANSPORT_HEAD && it.month) {
             this.ensureTransport(student);
             const mm = student.transport[it.month]; if (mm) mm.paid = Math.max(0, (Number(mm.paid) || 0) - (Number(it.amount) || 0));
+          } else if (MULTI_HEADS.indexOf(it.head) >= 0 && it.sub) {
+            this.ensureSubs(student);
+            const c = student.subs[it.head] && student.subs[it.head][it.sub]; if (c) c.paid = Math.max(0, (Number(c.paid) || 0) - (Number(it.amount) || 0));
           } else {
             const h = student.fees[it.head];
             if (h) h.paid = Math.max(0, (Number(h.paid) || 0) - (Number(it.amount) || 0));
