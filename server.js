@@ -23,6 +23,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const urlmod = require('url');
 
 let ExcelJS = null, nodemailer = null;
 try { ExcelJS = require('exceljs'); } catch (e) { console.warn('exceljs not installed — Excel export disabled'); }
@@ -61,6 +62,22 @@ function saveDB() {
   return writeChain;
 }
 loadDB();
+
+/* ---------------- Principal Academic Report portal (mounted at /report) ----
+ * The report portal is a self-contained sub-app: it keeps its own login and
+ * its own data file (db.json) but shares this Railway service and the same
+ * DATA_DIR volume. Principals sign in here to file the monthly academic /
+ * attendance report; the Chairman reviews. It is exempt from the fee-app's
+ * HTTP Basic auth because it has its own account system. */
+process.env.DATA_DIR = DATA_DIR; // report-lib/db reads this at require time
+let report = null;
+try {
+  report = require('./report-app');
+  report.seedIfEmpty();
+  console.log('Principal Report portal mounted at /report (data: ' + DATA_DIR + ')');
+} catch (e) {
+  console.warn('Principal Report portal NOT mounted:', e && e.message);
+}
 
 /* ---------------- helpers ---------------- */
 const MIME = {
@@ -222,8 +239,19 @@ async function handleSendReminders(req, res) {
 }
 
 const server = http.createServer(async (req, res) => {
+  const rawUrl = req.url || '/';
+  const pathOnly = rawUrl.split('?')[0];
+
+  /* Principal Report portal — own login, so it bypasses the fee-app Basic auth */
+  if (report && (pathOnly === '/report' || pathOnly.startsWith('/report/'))) {
+    if (pathOnly === '/report') { res.writeHead(302, { Location: '/report/' }); return res.end(); }
+    const sub = pathOnly.slice('/report'.length) || '/'; // '/', '/app.js', '/api/login', ...
+    const query = urlmod.parse(rawUrl, true).query;
+    return report.handleReport(req, res, sub, query);
+  }
+
   if (!checkAuth(req)) return unauthorized(res);
-  const url = (req.url || '/').split('?')[0];
+  const url = pathOnly;
   try {
     if (url === '/api/state' && req.method === 'GET') return sendJSON(res, 200, DB);
     if (url === '/api/state' && req.method === 'PUT') {
