@@ -1662,8 +1662,15 @@
       const sched = st.emailConfigured
         ? ('emails <b>' + U.esc(st.to) + '</b> every <b>' + days[st.day] + ' ' + String(st.hour).padStart(2, '0') + ':00</b>')
         : ('<span class="badge amber">email not configured</span> — set SMTP_* env vars to auto-email <b>' + U.esc(st.to) + '</b>');
-      box.innerHTML = `<p class="muted" style="margin:0 0 10px">Data is shared across all devices. Weekly Excel backup ${sched}. Last sent: <b>${st.lastBackupAt ? U.fmtDate(st.lastBackupAt.slice(0, 10)) : 'never'}</b>.</p>
-        <div class="flex gap wrap">
+      const persistent = st.dataDir && (st.dataDir === '/data' || !/[\\/]\.data$/.test(st.dataDir));
+      const storeLine = st.dataDir != null
+        ? `<div class="srv-store"><b>Server storage:</b> <code>${U.esc(st.dataDir)}</code> ${persistent ? '<span class="badge green">volume / persistent</span>' : '<span class="badge red">temporary — mount a volume at /data</span>'}
+             &nbsp;·&nbsp; data version <b>${st.version != null ? st.version : '?'}</b> · ${st.students != null ? st.students : '?'} students · ${st.payments != null ? st.payments : '?'} payments${st.bootAt ? ' · server started ' + new Date(st.bootAt).toLocaleString() : ''}
+             <div class="muted" style="font-size:11px;margin-top:4px">To confirm data survives restarts: note the <b>data version</b>, restart the service in Railway, reload this page — the version should keep growing, not reset to a low number.</div></div>`
+        : '';
+      box.innerHTML = `<p class="muted" style="margin:0 0 8px">Data is shared across all devices. Weekly Excel backup ${sched}. Last sent: <b>${st.lastBackupAt ? U.fmtDate(st.lastBackupAt.slice(0, 10)) : 'never'}</b>.</p>
+        ${storeLine}
+        <div class="flex gap wrap mt">
           <a class="btn primary" href="api/backup.xlsx">⬇ Download Excel (all data + dashboard)</a>
           <button class="btn ${st.emailConfigured ? '' : 'hidden'}" id="emailNow">✉️ Email backup now</button>
         </div>`;

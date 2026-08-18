@@ -30,6 +30,7 @@ try { nodemailer = require('nodemailer'); } catch (e) { console.warn('nodemailer
 
 const PORT = process.env.PORT || 3000;
 const ROOT = __dirname;
+const BOOT_AT = new Date().toISOString(); // when this server process last started
 const USER = process.env.APP_USER || 'admin';
 const PASS = process.env.APP_PASSWORD || '';
 const SCHOOL = 'AKB School of Excellence';
@@ -232,7 +233,7 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 200, { version: DB.version });
     }
     if (url === '/api/backup-status' && req.method === 'GET')
-      return sendJSON(res, 200, { serverMode: true, emailConfigured: emailConfigured(), to: BACKUP_EMAIL, day: BACKUP_DAY, hour: BACKUP_HOUR, lastBackupAt: DB.lastBackupAt, excel: !!ExcelJS, dataDir: DATA_DIR });
+      return sendJSON(res, 200, { serverMode: true, emailConfigured: emailConfigured(), to: BACKUP_EMAIL, day: BACKUP_DAY, hour: BACKUP_HOUR, lastBackupAt: DB.lastBackupAt, excel: !!ExcelJS, dataDir: DATA_DIR, version: DB.version, students: (DB.state.students || []).length, payments: (DB.state.payments || []).length, bootAt: BOOT_AT });
     if (url === '/api/backup.xlsx' && req.method === 'GET') {
       const buf = await buildWorkbook();
       res.writeHead(200, { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': 'attachment; filename="akb-fees-backup.xlsx"', 'Cache-Control': 'no-store' });
