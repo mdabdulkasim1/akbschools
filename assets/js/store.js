@@ -489,7 +489,7 @@
       });
       const s = {
         id, name: String(data.name).trim(), grade: data.grade || '', classTeacher: data.classTeacher || '',
-        gender: data.gender || '', dob: data.dob || '', age: data.age || '', prevSchool: data.prevSchool || '',
+        gender: data.gender || '', dob: data.dob || '', admissionDate: data.admissionDate || '', age: data.age || '', prevSchool: data.prevSchool || '',
         father: data.father || '', mother: data.mother || '', location: data.location || '', dropLocation: data.dropLocation || '',
         transportType: data.transportType || '', vehicle: data.vehicle || '', contact: data.contact || '',
         religion: data.religion || '', discount: Number(data.discount) || 0, admission: data.admission || 'NEW',

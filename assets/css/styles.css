@@ -257,6 +257,12 @@ tr.row-absent{background:var(--red-l)}
 .hbar-track > span{display:block;height:100%;border-radius:20px}
 .hbar-val{font-size:13px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
 
+/* sub-tabs (Academics / Attendance report) */
+.subtabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:0}
+.subtab{border:none;background:none;padding:9px 14px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+.subtab:hover{color:var(--text)}
+.subtab.active{color:var(--primary);border-bottom-color:var(--primary)}
+
 /* donut */
 .donut-wrap{display:flex;align-items:center;gap:24px;flex-wrap:wrap;justify-content:center}
 .donut-legend{display:flex;flex-direction:column;gap:8px;font-size:13px}

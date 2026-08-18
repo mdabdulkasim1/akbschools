@@ -56,6 +56,7 @@
         case 'collections': setActive('collections'); Views.collections(params); break;
         case 'reports': setActive('reports'); Views.reports(params); break;
         case 'attendance': setActive('attendance'); Views.attendance(params); break;
+        case 'attreport': setActive('attreport'); Views.attReport(params); break;
         case 'marks': setActive('marks'); Views.marks(params); break;
         case 'academics': setActive('academics'); Views.academics(params); break;
         case 'users': setActive('users'); Views.users(); break;
