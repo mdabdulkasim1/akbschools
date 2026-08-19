@@ -42,23 +42,6 @@ students — they never see any fee/collection/report data.
 **Change these passwords after first sign‑in** (sidebar → *Password*, or admin → *Users* → *Reset password*).
 Admins can add more users, change roles/classes, and delete users on the **Users** page.
 
-### Principal Academic Report portal (`/report`)
-
-The **Monthly Principal Academic Report** portal is bundled into the same server and
-mounted at **`/report`** (sidebar → *📘 Principal Report*). It shares this service and the
-same data volume but keeps its **own login and its own data file** (`db.json`), so it is
-exempt from the site‑wide `APP_PASSWORD` gate. Principals sign in only here to file the
-monthly academic / attendance report; the Chairman signs in as **admin** to review every
-school's reports on a KPI dashboard. Default accounts created on first run:
-
-| Role | Username | Password |
-|------|----------|----------|
-| Chairman (admin) | `chairman` | `Chairman@123` |
-| Principal (AKB) | `principal.akb` | `Principal@123` |
-
-Change these after first sign‑in. Its data lives beside the fee data in `DATA_DIR`, so the
-same Railway **Volume** persists both.
-
 > ⚠️ This login runs **in the browser**, so it's an access convenience for staff on shared
 > devices — not server‑grade security. For a public deploy, also set the `APP_PASSWORD`
 > environment variable (site‑wide gate, see below). For true per‑user security across devices,
