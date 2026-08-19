@@ -1456,24 +1456,37 @@
   }
 
   /* -------------------------------------------------- Users (admin) */
+  const ROLE_BADGE_CLS = { admin: 'blue', teacher: 'amber', account: 'gray', akbch_academics: 'green', akb_admins: 'blue' };
   function roleBadge(r) {
-    const cls = r === 'admin' ? 'blue' : (r === 'teacher' ? 'amber' : 'gray');
-    return `<span class="badge ${cls}">${U.esc(r)}</span>`;
+    const cls = ROLE_BADGE_CLS[r] || 'gray';
+    const label = (Store.ROLE_LABEL && Store.ROLE_LABEL[r]) || r;
+    return `<span class="badge ${cls}">${U.esc(label)}</span>`;
+  }
+  function roleOptions(sel) {
+    return Store.ROLES.map(r => `<option value="${r.key}"${sel === r.key ? ' selected' : ''}>${U.esc(r.label)}</option>`).join('');
+  }
+  // Short human summary of which pages a user can open.
+  function accessSummary(u) {
+    if (u.role === 'admin') return '<span class="muted">All pages</span>';
+    const keys = Store.PAGE_KEYS.filter(k => Store.userPages(u.username).indexOf(k) >= 0);
+    if (!keys.length) return '<span style="color:var(--red)">no pages</span>';
+    if (keys.length === Store.PAGE_KEYS.length) return 'All pages';
+    const labels = keys.map(k => (Store.PAGES.find(p => p.key === k) || {}).label || k);
+    const shown = labels.slice(0, 3).join(', ');
+    return U.esc(shown) + (labels.length > 3 ? ` <span class="muted">+${labels.length - 3}</span>` : '');
   }
   function users() {
     const rows = Store.users.map(u => {
       const isT = u.role === 'teacher';
-      const gr = isT ? (Array.isArray(u.grades) && u.grades.length ? u.grades.join(', ') : '<span style="color:var(--red)">no class assigned</span>') : '<span class="muted">—</span>';
+      const gr = isT ? (Array.isArray(u.grades) && u.grades.length ? U.esc(u.grades.join(', ')) : '<span style="color:var(--red)">no class assigned</span>') : '<span class="muted">—</span>';
       return `<tr>
       <td><b>${U.esc(u.name || u.username)}</b><div class="muted" style="font-size:11px">@${U.esc(u.username)}</div></td>
       <td>${roleBadge(u.role)}${u.mustChange ? ' <span class="badge amber">default pwd</span>' : ''}</td>
+      <td style="font-size:12px">${accessSummary(u)}</td>
       <td>${gr}</td>
       <td class="t-right">
-        <select class="sel-inline" data-roleselect="${U.esc(u.username)}">
-          <option value="account"${u.role === 'account' ? ' selected' : ''}>Account</option>
-          <option value="teacher"${u.role === 'teacher' ? ' selected' : ''}>Teacher</option>
-          <option value="admin"${u.role === 'admin' ? ' selected' : ''}>Admin</option>
-        </select>
+        <select class="sel-inline" data-roleselect="${U.esc(u.username)}">${roleOptions(u.role)}</select>
+        ${u.role === 'admin' ? '' : `<button class="btn sm" data-pages="${U.esc(u.username)}">Access</button>`}
         ${isT ? `<button class="btn sm" data-grades="${U.esc(u.username)}">Classes</button>` : ''}
         <button class="btn sm" data-reset="${U.esc(u.username)}">Reset pwd</button>
         <button class="btn sm danger" data-del="${U.esc(u.username)}">Delete</button>
@@ -1483,7 +1496,7 @@
     const nAcct = Store.users.filter(u => u.role === 'account').length;
     const nTeach = Store.users.filter(u => u.role === 'teacher').length;
     view().innerHTML = `
-      <div class="page-head"><div><h1>Users &amp; Access</h1><p>Admins see everything · accounts handle fees · teachers handle attendance &amp; report cards only</p></div>
+      <div class="page-head"><div><h1>Users &amp; Access</h1><p>Pick each user's role, then grant exactly the pages they should see with <b>Access</b>.</p></div>
         <button class="btn primary" id="addUser">＋ Add user</button></div>
       <div class="cards">
         ${kpi('Total Users', Store.users.length, { accent: 'blue' })}
@@ -1492,13 +1505,14 @@
         ${kpi('Teachers', nTeach, { accent: 'blue' })}
       </div>
       <div class="panel"><div class="panel-head"><h2>User Accounts</h2></div><div class="table-scroll"><table>
-        <thead><tr><th>User</th><th>Role</th><th>Class(es)</th><th class="t-right">Actions</th></tr></thead><tbody>${rows}</tbody></table></div></div>
+        <thead><tr><th>User</th><th>Role</th><th>Pages (access)</th><th>Class(es)</th><th class="t-right">Actions</th></tr></thead><tbody>${rows}</tbody></table></div></div>
       <div class="panel"><div class="panel-body pad">
-        <p class="muted" style="margin:0"><b>Teachers</b> can only open <b>Attendance</b> and <b>Report Cards</b> for the class(es) you assign — they never see fees, collections or reports. <b>Note on security:</b> this login runs in the browser, so it's an access convenience for staff on shared devices — not server‑grade protection. For a public deploy, also set the <code>APP_PASSWORD</code> environment variable.</p>
+        <p class="muted" style="margin:0"><b>Access</b> lets you tick exactly which dashboard pages a user can open — set it per person, however you like. <b>Teachers</b> are additionally limited to the class(es) you assign for Attendance &amp; Report Cards. <b>Admin</b> always has every page. <b>Note on security:</b> this login runs in the browser, so it's an access convenience for staff on shared devices — not server‑grade protection. For a public deploy, also set the <code>APP_PASSWORD</code> environment variable.</p>
       </div></div>`;
     $('#addUser').onclick = () => userModal();
     $$('[data-reset]').forEach(b => b.onclick = () => resetPwModal(b.dataset.reset));
     $$('[data-grades]').forEach(b => b.onclick = () => gradeAssignModal(b.dataset.grades));
+    $$('[data-pages]').forEach(b => b.onclick = () => pagesAssignModal(b.dataset.pages));
     $$('[data-roleselect]').forEach(sel => sel.onchange = async () => {
       const u = Store.getUser(sel.dataset.roleselect);
       const newRole = sel.value;
@@ -1512,6 +1526,48 @@
       try { await Store.deleteUser(b.dataset.del); U.toast('User deleted', 'success'); users(); }
       catch (e) { U.toast(e.message, 'error'); }
     });
+  }
+
+  // checkbox list of dashboard pages → grant to a user
+  function pageCheckboxes(selected) {
+    const sel = selected || [];
+    return Store.PAGES.map(p =>
+      `<label class="chk-inline"><input type="checkbox" value="${U.esc(p.key)}"${sel.indexOf(p.key) >= 0 ? ' checked' : ''}/> ${p.icon} ${U.esc(p.label)}</label>`
+    ).join('');
+  }
+  function pagesAssignModal(username) {
+    const u = Store.getUser(username); if (!u) return;
+    const current = Store.userPages(username);
+    const root = document.getElementById('modalRoot');
+    root.innerHTML = `
+      <div class="modal-backdrop" id="pBackdrop"><div class="modal">
+        <div class="modal-head"><h3>Page access — ${U.esc(u.name || u.username)}</h3><button class="x-close" id="pClose">&times;</button></div>
+        <div class="modal-body">
+          <p class="muted">Tick the dashboard pages this user is allowed to open. Only the ticked pages appear in their sidebar.</p>
+          <div class="flex gap wrap" style="margin-bottom:8px">
+            <button class="btn sm" id="pAll" type="button">Select all</button>
+            <button class="btn sm" id="pNone" type="button">Clear all</button>
+            <button class="btn sm" id="pDefault" type="button">Role default</button>
+          </div>
+          <div class="chk-grid" id="pPages">${pageCheckboxes(current)}</div>
+        </div>
+        <div class="modal-foot"><button class="btn" id="pCancel">Cancel</button><button class="btn primary" id="pSave">Save access</button></div>
+      </div></div>`;
+    const close = () => { root.innerHTML = ''; };
+    $('#pClose', root).onclick = close; $('#pCancel', root).onclick = close;
+    $('#pBackdrop', root).onclick = e => { if (e.target.id === 'pBackdrop') close(); };
+    const setAll = v => $$('#pPages input', root).forEach(c => c.checked = v);
+    $('#pAll', root).onclick = () => setAll(true);
+    $('#pNone', root).onclick = () => setAll(false);
+    $('#pDefault', root).onclick = () => {
+      const def = Store.defaultPagesFor(u.role);
+      $$('#pPages input', root).forEach(c => c.checked = def.indexOf(c.value) >= 0);
+    };
+    $('#pSave', root).onclick = async () => {
+      const pages = $$('#pPages input:checked', root).map(c => c.value);
+      await Store.setUserPages(username, pages);
+      close(); U.toast('Access updated', 'success'); users();
+    };
   }
 
   // checkbox list of grades → assign to a teacher
@@ -1545,19 +1601,24 @@
 
   function userModal() {
     const root = document.getElementById('modalRoot');
+    const firstRole = (Store.ROLES[1] && Store.ROLES[1].key) || 'account'; // default to "account"
     root.innerHTML = `
       <div class="modal-backdrop" id="uBackdrop"><div class="modal">
         <div class="modal-head"><h3>Add user</h3><button class="x-close" id="uClose">&times;</button></div>
         <div class="modal-body">
           <div class="field"><label>Full name</label><input id="uName" placeholder="e.g. Mrs. Priya (Grade 3 teacher)"/></div>
           <div class="field"><label>Username</label><input id="uUser" placeholder="e.g. teacher_g3"/></div>
-          <div class="field"><label>Role</label><select id="uRole">
-            <option value="account">Account (fees data entry)</option>
-            <option value="teacher">Teacher (attendance &amp; report cards)</option>
-            <option value="admin">Admin (full access)</option>
-          </select></div>
+          <div class="field"><label>Role</label><select id="uRole">${roleOptions(firstRole)}</select></div>
           <div class="field hidden" id="uGradesField"><label>Class(es) this teacher handles</label>
             <div class="chk-grid" id="uGrades">${gradeCheckboxes([])}</div></div>
+          <div class="field" id="uPagesField"><label>Pages this user can access
+              <span class="muted" style="font-weight:400">— tick as you wish</span></label>
+            <div class="flex gap wrap" style="margin-bottom:6px">
+              <button class="btn sm" id="uAll" type="button">Select all</button>
+              <button class="btn sm" id="uNone" type="button">Clear all</button>
+              <button class="btn sm" id="uDefault" type="button">Role default</button>
+            </div>
+            <div class="chk-grid" id="uPages">${pageCheckboxes(Store.defaultPagesFor(firstRole))}</div></div>
           <div class="field"><label>Password</label><input id="uPass" type="text" placeholder="min 4 characters"/></div>
         </div>
         <div class="modal-foot"><button class="btn" id="uCancel">Cancel</button><button class="btn primary" id="uSave">Create user</button></div>
@@ -1565,12 +1626,25 @@
     const close = () => { root.innerHTML = ''; };
     $('#uClose', root).onclick = close; $('#uCancel', root).onclick = close;
     $('#uBackdrop', root).onclick = e => { if (e.target.id === 'uBackdrop') close(); };
-    $('#uRole', root).onchange = () => { $('#uGradesField', root).classList.toggle('hidden', $('#uRole', root).value !== 'teacher'); };
+    const syncRole = () => {
+      const rl = $('#uRole', root).value;
+      $('#uGradesField', root).classList.toggle('hidden', rl !== 'teacher');
+      // Admin always has all pages → hide the picker; otherwise reset ticks to the role default.
+      const isAdmin = rl === 'admin';
+      $('#uPagesField', root).classList.toggle('hidden', isAdmin);
+      if (!isAdmin) { const def = Store.defaultPagesFor(rl); $$('#uPages input', root).forEach(c => c.checked = def.indexOf(c.value) >= 0); }
+    };
+    $('#uRole', root).onchange = syncRole;
+    const setAll = v => $$('#uPages input', root).forEach(c => c.checked = v);
+    $('#uAll', root).onclick = () => setAll(true);
+    $('#uNone', root).onclick = () => setAll(false);
+    $('#uDefault', root).onclick = () => { const def = Store.defaultPagesFor($('#uRole', root).value); $$('#uPages input', root).forEach(c => c.checked = def.indexOf(c.value) >= 0); };
     $('#uSave', root).onclick = async () => {
       try {
         const role = $('#uRole', root).value;
         const grades = role === 'teacher' ? $$('#uGrades input:checked', root).map(c => c.value) : undefined;
-        await Store.addUser({ name: $('#uName', root).value, username: $('#uUser', root).value, role, password: $('#uPass', root).value, grades });
+        const pages = role === 'admin' ? undefined : $$('#uPages input:checked', root).map(c => c.value);
+        await Store.addUser({ name: $('#uName', root).value, username: $('#uUser', root).value, role, password: $('#uPass', root).value, grades, pages });
         close(); U.toast('User created', 'success'); users();
       } catch (e) { U.toast(e.message, 'error'); }
     };
@@ -1742,7 +1816,10 @@
   // (this also reflects class re-assignments made while the teacher is logged in).
   function myGrades() {
     const cu = Store.currentUser; if (!cu) return [];
-    if (cu.role === 'admin') return Store.gradeList();
+    // Only teachers are scoped to assigned classes; every other role that can
+    // reach attendance/report cards (admin, account, AKBCH Academics, AKB Admins)
+    // sees all classes.
+    if (cu.role !== 'teacher') return Store.gradeList();
     const u = Store.getUser(cu.username) || cu;
     return Array.isArray(u.grades) ? u.grades.filter(Boolean) : [];
   }

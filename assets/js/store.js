@@ -107,7 +107,52 @@
   // Matches PRE KG, PREKG, LKG, JKG, UKG, SKG, KG, KINDER… — note "JKG"/"SKG"
   // have no word boundary before "KG", so anchor on the END boundary instead.
   function isKG(grade) { return /KG\b|KINDER/i.test(String(grade || '')); }
-  function normRole(role) { return role === 'admin' ? 'admin' : (role === 'teacher' ? 'teacher' : 'account'); }
+
+  /* ---- Roles & page-level access ----
+   * PAGES are the dashboard "topics" an admin can grant per user (matching the
+   * sidebar). ROLES are labels/groupings; each has a DEFAULT set of pages, but
+   * the admin can override any user's access with a custom `pages` list
+   * ("give access as per my wish"). Admin always has every page. */
+  const PAGES = [
+    { key: 'dashboard',   label: 'Dashboard',         icon: '📊' },
+    { key: 'students',    label: 'Students',          icon: '👨‍🎓' },
+    { key: 'collect',     label: 'Receive Payment',   icon: '🧾' },
+    { key: 'collections', label: 'Collections',       icon: '💵' },
+    { key: 'reports',     label: 'Reports',           icon: '📈' },
+    { key: 'attendance',  label: 'Attendance',        icon: '📝' },
+    { key: 'attreport',   label: 'Attendance Report', icon: '📅' },
+    { key: 'marks',       label: 'Report Cards',      icon: '📚' },
+    { key: 'academics',   label: 'Academics',         icon: '🎓' },
+    { key: 'users',       label: 'Users',             icon: '👥' },
+    { key: 'data',        label: 'Data & Backup',     icon: '⚙️' }
+  ];
+  const PAGE_KEYS = PAGES.map(p => p.key);
+  const ROLES = [
+    { key: 'admin',           label: 'Admin' },
+    { key: 'account',         label: 'Account' },
+    { key: 'teacher',         label: 'Teacher' },
+    { key: 'akbch_academics', label: 'AKBCH ACADEMICS' },
+    { key: 'akb_admins',      label: 'AKB ADMINS' }
+  ];
+  const ROLE_KEYS = ROLES.map(r => r.key);
+  const ROLE_LABEL = ROLES.reduce((m, r) => (m[r.key] = r.label, m), {});
+  // Sensible starting page-set for each role (admin => everything).
+  const DEFAULT_PAGES = {
+    admin: PAGE_KEYS.slice(),
+    account: ['dashboard', 'students', 'collect', 'collections', 'reports'],
+    teacher: ['attendance', 'marks'],
+    akbch_academics: ['dashboard', 'attendance', 'attreport', 'marks', 'academics'],
+    akb_admins: ['dashboard', 'students', 'collect', 'collections', 'reports', 'attendance', 'attreport', 'marks', 'academics']
+  };
+  function normRole(role) { return ROLE_KEYS.indexOf(role) >= 0 ? role : 'account'; }
+  function defaultPagesFor(role) { return (DEFAULT_PAGES[normRole(role)] || DEFAULT_PAGES.account).slice(); }
+  // Effective pages for a user record: admin => all; explicit list wins; else role default.
+  function effectivePages(u) {
+    if (!u) return [];
+    if (u.role === 'admin') return PAGE_KEYS.slice();
+    if (Array.isArray(u.pages)) return u.pages.filter(k => PAGE_KEYS.indexOf(k) >= 0);
+    return defaultPagesFor(u.role);
+  }
 
   // Rebuild the HEAD_* lookups (in place) from a fee-head config array.
   function rebuildHeads(feeHeads) {
@@ -140,6 +185,7 @@
     ENTITIES, MODES, HEAD_ORDER, HEAD_LABELS, BUSINESS, BUSINESSES, BUSINESS_ORDER, HEAD_BUSINESS,
     SCHOOL_WHATSAPP, SCHOOL_WHATSAPP_DISPLAY, DEFAULT_FEE_HEADS,
     REPORT, isKG, MULTI_HEADS,
+    PAGES, PAGE_KEYS, ROLES, ROLE_LABEL, defaultPagesFor,
 
     serverMode() { return serverMode; },
 
@@ -765,7 +811,7 @@
       u.mustChange = false;
       await this.persistUsers();
     },
-    async addUser({ username, role, name, password, grades }) {
+    async addUser({ username, role, name, password, grades, pages }) {
       username = String(username || '').trim();
       if (!username) throw new Error('Username required');
       if (this.getUser(username)) throw new Error('Username already exists');
@@ -776,6 +822,8 @@
         salt, hash: await pbkdf(password, salt), mustChange: false, createdAt: new Date().toISOString()
       };
       if (u.role === 'teacher') u.grades = Array.isArray(grades) ? grades.slice() : [];
+      // Store an explicit page list when given (unless admin, who always has all).
+      if (u.role !== 'admin' && Array.isArray(pages)) u.pages = pages.filter(k => PAGE_KEYS.indexOf(k) >= 0);
       this.users.push(u);
       await this.persistUsers();
     },
@@ -784,12 +832,29 @@
       u.role = normRole(role);
       if (u.role === 'teacher') { if (!Array.isArray(u.grades)) u.grades = []; }
       else delete u.grades;
+      // Admin implies full access; drop any custom page list.
+      if (u.role === 'admin') delete u.pages;
       await this.persistUsers();
     },
     async setUserGrades(username, grades) {
       const u = this.getUser(username); if (!u) return;
       u.grades = Array.isArray(grades) ? grades.slice() : [];
       await this.persistUsers();
+    },
+    async setUserPages(username, pages) {
+      const u = this.getUser(username); if (!u) return;
+      if (u.role === 'admin') { delete u.pages; }
+      else u.pages = Array.isArray(pages) ? pages.filter(k => PAGE_KEYS.indexOf(k) >= 0) : [];
+      await this.persistUsers();
+    },
+    // Effective page keys for a username (or the current user when omitted).
+    userPages(username) {
+      const u = username ? this.getUser(username) : (this.currentUser && this.getUser(this.currentUser.username));
+      return effectivePages(u || (username ? null : this.currentUser));
+    },
+    canAccess(pageKey) {
+      if (this.currentUser && this.currentUser.role === 'admin') return true;
+      return this.userPages().indexOf(pageKey) >= 0;
     },
     async deleteUser(username) {
       const admins = this.users.filter(u => u.role === 'admin');

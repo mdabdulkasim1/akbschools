@@ -2,11 +2,9 @@
 (function (w) {
   'use strict';
 
-  // routes allowed for the "account" role. Accounts share the full admin
-  // dashboard/collections/reports; only Users and Data & Backup stay admin-only.
-  const ACCOUNT_ROUTES = { dashboard: 1, students: 1, student: 1, collect: 1, business: 1, collections: 1, reports: 1 };
-  // Teachers have NO access to fee matters — only attendance & marks entry.
-  const TEACHER_ROUTES = { attendance: 1, marks: 1 };
+  // Sub-routes that ride on a top-level page's access grant.
+  const ROUTE_PAGE = { student: 'students', business: 'dashboard' };
+  function pageOf(name) { return ROUTE_PAGE[name] || name; }
 
   const Router = {
     render() { route(); },
@@ -29,12 +27,16 @@
   }
 
   function role() { return (Store.currentUser && Store.currentUser.role) || 'account'; }
-  function landing() { return role() === 'teacher' ? 'attendance' : 'dashboard'; }
+  // First page this user can actually open (used as their home screen).
+  function landing() {
+    if (Store.isAdmin()) return 'dashboard';
+    const pages = Store.userPages();
+    return (pages && pages.length) ? pages[0] : 'dashboard';
+  }
 
   function allowed(name) {
     if (Store.isAdmin()) return true;
-    if (role() === 'teacher') return !!TEACHER_ROUTES[name];
-    return !!ACCOUNT_ROUTES[name];
+    return Store.canAccess(pageOf(name));
   }
 
   function route() {
@@ -77,16 +79,16 @@
   function applyRoleUI() {
     const admin = Store.isAdmin();
     const r = role();
-    // data-roles="admin account teacher" — show a nav link only for listed roles
-    document.querySelectorAll('#nav a[data-roles]').forEach(a => {
-      const roles = (a.dataset.roles || '').split(/\s+/).filter(Boolean);
-      a.classList.toggle('hidden', roles.length > 0 && roles.indexOf(r) < 0);
+    // Show a nav link only if this user has access to that page ("as per my wish").
+    document.querySelectorAll('#nav a[data-route]').forEach(a => {
+      const pg = pageOf(a.dataset.route);
+      a.classList.toggle('hidden', !(admin || Store.canAccess(pg)));
     });
     const u = Store.currentUser || {};
     document.getElementById('userBox').innerHTML = `
       <div class="user-row">
         <div class="user-ava">${U.esc(U.initials(u.name || u.username || '?'))}</div>
-        <div class="user-meta"><strong>${U.esc(u.name || u.username)}</strong><span class="badge ${admin ? 'blue' : (r === 'teacher' ? 'amber' : 'gray')}">${U.esc(u.role)}</span></div>
+        <div class="user-meta"><strong>${U.esc(u.name || u.username)}</strong><span class="badge ${admin ? 'blue' : (r === 'teacher' ? 'amber' : 'gray')}">${U.esc((Store.ROLE_LABEL && Store.ROLE_LABEL[u.role]) || u.role)}</span></div>
       </div>
       <div class="user-actions">
         <button class="btn sm" id="changePw">Password</button>
