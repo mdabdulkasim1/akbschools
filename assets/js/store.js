@@ -299,8 +299,15 @@
         } catch (e) { /* mirror is best-effort */ }
       });
     },
-    _scheduleSync() { dirty = true; clearTimeout(syncTimer); syncTimer = setTimeout(() => this._syncNow(), 350); },
+    _scheduleSync() { dirty = true; clearTimeout(syncTimer); syncTimer = setTimeout(() => this._syncNow(), 350); this._emitSync(); },
     pendingSync() { return dirty; },
+    _emitSync() { try { w.dispatchEvent(new CustomEvent('akb-sync')); } catch (e) {} },
+    // Overall connection/save state for the UI badge.
+    syncState() {
+      if (!serverMode) return 'offline';       // not connected to the shared server (this device only)
+      if (dirty || syncing) return 'saving';    // change pending / in flight
+      return 'saved';                            // everything is on the server
+    },
     // Merge on a version conflict instead of discarding this device's unsynced
     // changes. Newly created users and recorded payments are PRESERVED (union),
     // so they are never silently lost; student/meta take the server's latest
@@ -331,6 +338,7 @@
     async _syncNow() {
       if (syncing) { syncAgain = true; return; }
       syncing = true;
+      this._emitSync();
       try {
         for (let attempt = 0; attempt < 6; attempt++) {
           let r;
@@ -348,7 +356,7 @@
             break;
           } else { break; /* server error — leave dirty, retry later */ }
         }
-      } finally { syncing = false; }
+      } finally { syncing = false; this._emitSync(); }
       if (syncAgain) { syncAgain = false; this._scheduleSync(); }
     },
     // force any pending change to the server now (called on logout / tab close)

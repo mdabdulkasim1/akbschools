@@ -31,6 +31,18 @@ button{font-family:inherit}
 .nav a.active{background:var(--primary);color:#fff}
 .sidebar-foot{padding:14px 16px;border-top:1px solid #1e293b}
 .year-badge{font-size:11px;color:#94a3b8}
+.sync-badge{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:600;margin-bottom:10px;padding:5px 9px;border-radius:8px;line-height:1.3}
+.sync-badge .dot{width:8px;height:8px;border-radius:50%;flex:0 0 8px}
+.sync-badge.ok{color:#bbf7d0;background:rgba(22,163,74,.15)}
+.sync-badge.ok .dot{background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.18)}
+.sync-badge.saving{color:#fde68a;background:rgba(217,119,6,.15)}
+.sync-badge.saving .dot{background:#f59e0b;animation:syncpulse 1s ease-in-out infinite}
+.sync-badge.offline{color:#fecaca;background:rgba(220,38,38,.15)}
+.sync-badge.offline .dot{background:#ef4444}
+@keyframes syncpulse{0%,100%{opacity:1}50%{opacity:.3}}
+.db-status.ok{color:var(--green)}
+.db-status.saving{color:var(--amber,#f59e0b)}
+.db-status.offline{color:var(--red)}
 
 /* Main */
 .main{flex:1;margin-left:230px;display:flex;flex-direction:column;min-width:0}
@@ -322,6 +334,7 @@ tr.row-absent{background:var(--red-l)}
         <a href="#/data" data-route="data" data-roles="admin"><span class="ico">⚙️</span> Data &amp; Backup</a>
       </nav>
       <div class="sidebar-foot">
+        <div id="syncBadge" class="sync-badge" title="Connection to the shared server (all devices)"></div>
         <div class="user-box" id="userBox"></div>
         <div id="yearBadge" class="year-badge"></div>
       </div>
@@ -820,8 +833,15 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
         } catch (e) { /* mirror is best-effort */ }
       });
     },
-    _scheduleSync() { dirty = true; clearTimeout(syncTimer); syncTimer = setTimeout(() => this._syncNow(), 350); },
+    _scheduleSync() { dirty = true; clearTimeout(syncTimer); syncTimer = setTimeout(() => this._syncNow(), 350); this._emitSync(); },
     pendingSync() { return dirty; },
+    _emitSync() { try { w.dispatchEvent(new CustomEvent('akb-sync')); } catch (e) {} },
+    // Overall connection/save state for the UI badge.
+    syncState() {
+      if (!serverMode) return 'offline';       // not connected to the shared server (this device only)
+      if (dirty || syncing) return 'saving';    // change pending / in flight
+      return 'saved';                            // everything is on the server
+    },
     // Merge on a version conflict instead of discarding this device's unsynced
     // changes. Newly created users and recorded payments are PRESERVED (union),
     // so they are never silently lost; student/meta take the server's latest
@@ -852,6 +872,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     async _syncNow() {
       if (syncing) { syncAgain = true; return; }
       syncing = true;
+      this._emitSync();
       try {
         for (let attempt = 0; attempt < 6; attempt++) {
           let r;
@@ -869,7 +890,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
             break;
           } else { break; /* server error — leave dirty, retry later */ }
         }
-      } finally { syncing = false; }
+      } finally { syncing = false; this._emitSync(); }
       if (syncAgain) { syncAgain = false; this._scheduleSync(); }
     },
     // force any pending change to the server now (called on logout / tab close)
@@ -4146,6 +4167,23 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       </div>`;
     document.getElementById('logoutBtn').onclick = () => Auth.logout();
     document.getElementById('changePw').onclick = () => Views.changePassword();
+    updateSyncBadge();
+  }
+
+  // Sidebar badge: is this device connected to the shared server, and is
+  // everything saved? Green = all saved · amber = saving · red = offline.
+  function updateSyncBadge() {
+    const el = document.getElementById('syncBadge');
+    const st = (Store.syncState && Store.syncState()) || 'saved';
+    const map = {
+      saved:   { cls: 'ok',      txt: 'All saved to server' },
+      saving:  { cls: 'saving',  txt: 'Saving…' },
+      offline: { cls: 'offline', txt: 'Offline — this device only' }
+    };
+    const m = map[st] || map.offline;
+    if (el) { el.className = 'sync-badge ' + m.cls; el.innerHTML = '<span class="dot"></span><span>' + m.txt + '</span>'; }
+    const dot = document.getElementById('dbStatus');
+    if (dot) { dot.className = 'db-status ' + m.cls; dot.title = m.txt; }
   }
 
   function wireGlobalSearch() {
@@ -4179,6 +4217,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     if (!wired) {
       wireGlobalSearch();
       window.addEventListener('hashchange', route);
+      window.addEventListener('akb-sync', updateSyncBadge);
       document.getElementById('hamburger').onclick = () => document.getElementById('sidebar').classList.toggle('open');
       wired = true;
     }

@@ -96,6 +96,23 @@
       </div>`;
     document.getElementById('logoutBtn').onclick = () => Auth.logout();
     document.getElementById('changePw').onclick = () => Views.changePassword();
+    updateSyncBadge();
+  }
+
+  // Sidebar badge: is this device connected to the shared server, and is
+  // everything saved? Green = all saved · amber = saving · red = offline.
+  function updateSyncBadge() {
+    const el = document.getElementById('syncBadge');
+    const st = (Store.syncState && Store.syncState()) || 'saved';
+    const map = {
+      saved:   { cls: 'ok',      txt: 'All saved to server' },
+      saving:  { cls: 'saving',  txt: 'Saving…' },
+      offline: { cls: 'offline', txt: 'Offline — this device only' }
+    };
+    const m = map[st] || map.offline;
+    if (el) { el.className = 'sync-badge ' + m.cls; el.innerHTML = '<span class="dot"></span><span>' + m.txt + '</span>'; }
+    const dot = document.getElementById('dbStatus');
+    if (dot) { dot.className = 'db-status ' + m.cls; dot.title = m.txt; }
   }
 
   function wireGlobalSearch() {
@@ -129,6 +146,7 @@
     if (!wired) {
       wireGlobalSearch();
       window.addEventListener('hashchange', route);
+      window.addEventListener('akb-sync', updateSyncBadge);
       document.getElementById('hamburger').onclick = () => document.getElementById('sidebar').classList.toggle('open');
       wired = true;
     }
