@@ -1605,6 +1605,18 @@
     };
   }
 
+  // After creating/updating a login, tell the admin plainly whether it reached
+  // the shared server (so it works on mobiles / other devices) or only saved
+  // locally — the usual reason a new user "can't log in on mobile".
+  function afterUserWrite(okMsg) {
+    if (!Store.serverMode()) {
+      U.toast('Saved on THIS device only — the app is offline, so this login will NOT work on mobiles/other devices until this device reconnects and syncs.', 'error');
+    } else if (Store.pendingSync()) {
+      U.toast('Saved here but the server did not confirm yet — check your internet. The login may not work on other devices until it syncs.', 'error');
+    } else {
+      U.toast(okMsg + ' · synced to all devices', 'success');
+    }
+  }
   function userModal() {
     const root = document.getElementById('modalRoot');
     const firstRole = (Store.ROLES[1] && Store.ROLES[1].key) || 'account'; // default to "account"
@@ -1653,7 +1665,7 @@
         const grades = role === 'teacher' ? $$('#uGrades input:checked', root).map(c => c.value) : undefined;
         const pages = role === 'admin' ? undefined : $$('#uPages input:checked', root).map(c => c.value);
         await Store.addUser({ name: $('#uName', root).value, username: $('#uUser', root).value, role, password: $('#uPass', root).value, grades, pages });
-        close(); U.toast('User created', 'success'); users();
+        close(); afterUserWrite('User created'); users();
       } catch (e) { U.toast(e.message, 'error'); }
     };
   }
@@ -1671,7 +1683,7 @@
     $('#rBackdrop', root).onclick = e => { if (e.target.id === 'rBackdrop') close(); };
     $('#rSave', root).onclick = async () => {
       const p = $('#rPass', root).value; if (!p || p.length < 4) { U.toast('Password too short', 'error'); return; }
-      await Store.setPassword(username, p); close(); U.toast('Password updated', 'success'); if (location.hash.indexOf('users') >= 0) users();
+      await Store.setPassword(username, p); close(); afterUserWrite('Password updated'); if (location.hash.indexOf('users') >= 0) users();
     };
   }
 

@@ -300,18 +300,55 @@
       });
     },
     _scheduleSync() { dirty = true; clearTimeout(syncTimer); syncTimer = setTimeout(() => this._syncNow(), 350); },
+    pendingSync() { return dirty; },
+    // Merge on a version conflict instead of discarding this device's unsynced
+    // changes. Newly created users and recorded payments are PRESERVED (union),
+    // so they are never silently lost; student/meta take the server's latest
+    // (documented last-writer behaviour for fee data).
+    _mergeOnConflict(serverDb) {
+      const st = (serverDb && serverDb.state) || {};
+      const srvUsers = st.users || [];
+      const srvPayments = st.payments || [];
+      const lc = v => String(v == null ? '' : v).toLowerCase();
+      // Users: keep every server user; this device's record wins on a username
+      // collision (preserves a just-set password); keep users created only here.
+      const localByName = new Map(this.users.map(u => [lc(u.username), u]));
+      const srvNames = new Set(srvUsers.map(u => lc(u.username)));
+      const mergedUsers = srvUsers.map(su => localByName.get(lc(su.username)) || su);
+      this.users.forEach(u => { if (!srvNames.has(lc(u.username))) mergedUsers.push(u); });
+      // Payments: union by id — never drop a receipt recorded on this device.
+      const payById = new Map(srvPayments.map(p => [p.id, p]));
+      this.payments.forEach(p => { if (p && !payById.has(p.id)) payById.set(p.id, p); });
+      this.students = st.students || [];
+      this.meta = st.meta || {};
+      this.payments = Array.from(payById.values());
+      this.users = mergedUsers;
+      if (Array.isArray(this.meta.feeHeads) && this.meta.feeHeads.length) { this.feeHeads = this.meta.feeHeads; rebuildHeads(this.feeHeads); }
+      baseVersion = (serverDb && serverDb.version) || 0;
+      this.recomputeAll();
+      this._mirrorLocal();
+    },
     async _syncNow() {
       if (syncing) { syncAgain = true; return; }
       syncing = true;
       try {
-        const r = await fetch('api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ baseVersion, state: this._snapshot() }) });
-        if (r.status === 409) {
-          this._applyServer(await r.json());
-          U.toast('Reloaded latest data (another device was editing)', 'error');
-          if (w.Router && w.Router.render) w.Router.render();
-        } else if (r.ok) { baseVersion = (await r.json()).version; dirty = false; }
-      } catch (e) { /* offline — will retry on next change */ }
-      syncing = false;
+        for (let attempt = 0; attempt < 6; attempt++) {
+          let r;
+          try {
+            r = await fetch('api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ baseVersion, state: this._snapshot() }) });
+          } catch (e) { break; /* offline — will retry on next change/flush */ }
+          if (r.status === 409) {
+            let srv = null; try { srv = await r.json(); } catch (e) { break; }
+            this._mergeOnConflict(srv);               // preserve local users/payments, adopt server base
+            if (w.Router && w.Router.render) w.Router.render();
+            continue;                                  // retry the PUT with the merged state
+          } else if (r.ok) {
+            try { baseVersion = (await r.json()).version; } catch (e) {}
+            dirty = false;
+            break;
+          } else { break; /* server error — leave dirty, retry later */ }
+        }
+      } finally { syncing = false; }
       if (syncAgain) { syncAgain = false; this._scheduleSync(); }
     },
     // force any pending change to the server now (called on logout / tab close)
@@ -876,7 +913,18 @@
       this.users = this.users.filter(u => u.username !== username);
       await this.persist();
     },
-    async persistUsers() { return this.persist(); },
+    // User accounts must reach the shared server promptly and reliably, so
+    // (unlike the debounced fee-data sync) push immediately and wait for it.
+    async persistUsers() {
+      if (serverMode) {
+        this._mirrorLocal();
+        dirty = true;
+        if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
+        await this._syncNow();
+        return;
+      }
+      return this.persist();
+    },
     // session (persisted so a refresh keeps you logged in on this device)
     setSession(u) {
       this.currentUser = u ? { username: u.username, role: u.role, name: u.name, grades: Array.isArray(u.grades) ? u.grades.slice() : undefined } : null;
