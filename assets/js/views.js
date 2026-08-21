@@ -2345,7 +2345,7 @@
       if (expState.business && e.business !== expState.business) return false;
       if (expState.category && e.category !== expState.category) return false;
       if (ym && String(e.date || '').slice(0, 7) !== ym) return false;
-      if (expState.q) { const q = expState.q.toLowerCase(); if (!((e.billNo || '') + ' ' + (e.reference || '') + ' ' + (e.payee || '') + ' ' + (e.note || '') + ' ' + (e.categoryLabel || '')).toLowerCase().includes(q)) return false; }
+      if (expState.q) { const q = expState.q.toLowerCase(); if (!((e.billNo || '') + ' ' + (e.reference || '') + ' ' + (e.payee || '') + ' ' + (e.note || '') + ' ' + (e.categoryLabel || '') + ' ' + (e.item || '')).toLowerCase().includes(q)) return false; }
       return true;
     });
     const sum = arr => arr.reduce((a, e) => a + (Number(e.amount) || 0), 0);
@@ -2358,17 +2358,18 @@
     const tableRows = rows.map(e => `<tr>
       <td>${U.fmtDate(e.date)}</td>
       <td><b>${U.esc(e.categoryLabel || e.category || '')}</b></td>
+      <td>${U.esc(e.item || '')}</td>
       <td class="muted" style="font-size:12px">${U.esc(e.businessName || '')}</td>
       <td class="mono">${U.esc(e.billNo || '')}</td>
       <td>${U.esc(e.reference || '')}${e.payee ? `<div class="muted" style="font-size:11px">${U.esc(e.payee)}</div>` : ''}</td>
       <td><span class="pill-mode">${U.esc(e.mode || '')}</span></td>
       <td class="num" style="color:var(--red);font-weight:600">${U.inr(e.amount)}</td>
       <td class="t-right"><button class="btn sm" data-exedit="${U.esc(e.id)}">Edit</button> <button class="btn sm danger" data-exdel="${U.esc(e.id)}">✕</button></td></tr>`).join('')
-      || '<tr><td colspan="8" class="empty">No expenses match these filters. Click “＋ Add Expense”.</td></tr>';
+      || '<tr><td colspan="9" class="empty">No expenses match these filters. Click “＋ Add Expense”.</td></tr>';
 
     view().innerHTML = `
       <div class="page-head"><div><h1>Expenses</h1><p>Record and track school expenses by firm &amp; category</p></div>
-        <div class="flex gap">${Store.isAdmin() ? '<button class="btn" id="expCats">Manage categories</button>' : ''}<button class="btn primary" id="addExp">＋ Add Expense</button></div></div>
+        <div class="flex gap">${Store.isAdmin() ? '<button class="btn" id="expCats">Manage categories</button><button class="btn" id="expItems">Manage sub-categories</button>' : ''}<button class="btn primary" id="addExp">＋ Add Expense</button></div></div>
       <div class="cards">
         ${kpi('Total Expenses', U.inr(totalAll), { accent: 'red' })}
         ${kpi('This Month', U.inr(totalMonth), { accent: 'amber', sub: fmtMonth(thisMonth) })}
@@ -2387,14 +2388,15 @@
           </div>
         </div>
         <div class="table-scroll"><table>
-          <thead><tr><th>Date</th><th>Category</th><th>Firm</th><th>Bill No</th><th>Reference / Payee</th><th>Mode</th><th class="num">Amount</th><th class="t-right">Actions</th></tr></thead>
+          <thead><tr><th>Date</th><th>Category</th><th>Sub-category</th><th>Firm</th><th>Bill No</th><th>Reference / Payee</th><th>Mode</th><th class="num">Amount</th><th class="t-right">Actions</th></tr></thead>
           <tbody>${tableRows}</tbody>
-          <tfoot><tr><td colspan="6">TOTAL (${rows.length})</td><td class="num" style="color:var(--red);font-weight:700">${U.inr(totalShown)}</td><td></td></tr></tfoot>
+          <tfoot><tr><td colspan="7">TOTAL (${rows.length})</td><td class="num" style="color:var(--red);font-weight:700">${U.inr(totalShown)}</td><td></td></tr></tfoot>
         </table></div>
       </div>`;
 
     $('#addExp').onclick = () => expenseModal(null);
     const ec = $('#expCats'); if (ec) ec.onclick = () => expenseCatsModal();
+    const ei = $('#expItems'); if (ei) ei.onclick = () => expenseItemsModal();
     $('#expQ').oninput = U.debounce(e => { expState.q = e.target.value; expenses(); }, 200);
     $('#expBiz').onchange = e => { expState.business = e.target.value; expenses(); };
     $('#expCat').onchange = e => { expState.category = e.target.value; expenses(); };
@@ -2408,8 +2410,8 @@
   }
 
   function exportExpensesCsv(rows) {
-    const head = ['Date', 'Category', 'Firm', 'Bill No', 'Reference', 'Payee', 'Mode', 'Amount', 'Note'];
-    const lines = [head.join(',')].concat(rows.map(e => [e.date, e.categoryLabel || e.category, e.businessName, e.billNo, e.reference, e.payee, e.mode, e.amount, e.note]
+    const head = ['Date', 'Category', 'Sub-category', 'Firm', 'Bill No', 'Reference', 'Payee', 'Mode', 'Amount', 'Note'];
+    const lines = [head.join(',')].concat(rows.map(e => [e.date, e.categoryLabel || e.category, e.item, e.businessName, e.billNo, e.reference, e.payee, e.mode, e.amount, e.note]
       .map(v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`).join(',')));
     U.download('expenses.csv', lines.join('\n'), 'text/csv');
   }
@@ -2433,6 +2435,9 @@
           </div>
           <div class="field"><label>Expense category</label>
             <div class="flex gap"><select id="exCat" style="flex:1">${catOpts(defCat)}</select>${Store.isAdmin() ? '<button class="btn sm" id="exAddCat" type="button">＋ Add</button>' : ''}</div></div>
+          <div class="field"><label>Sub-category (bill item)</label>
+            <div class="flex gap"><input id="exItem" list="exItemsDL" style="flex:1" value="${U.esc(cur.item || '')}" placeholder="Select or type…" autocomplete="off"/><button class="btn sm" id="exAddItem" type="button">＋ Add</button></div>
+            <datalist id="exItemsDL">${Store.expenseItems().map(x => `<option value="${U.esc(x)}"></option>`).join('')}</datalist></div>
           <div class="field"><label>Firm (billed under)</label><select id="exBiz">${bizOpts(defBiz)}</select></div>
           <div class="grid2">
             <div class="field"><label>Bill No</label><input id="exBill" value="${U.esc(cur.billNo || '')}" placeholder="e.g. INV-1024"/></div>
@@ -2455,11 +2460,18 @@
       try { const k = await Store.addExpenseCat(name.trim(), $('#exBiz', root).value); U.toast('Category added', 'success'); $('#exCat', root).innerHTML = catOpts(k); $('#exCat', root).value = k; const c = Store.expenseCat(k); if (c) $('#exBiz', root).value = c.business; }
       catch (e) { U.toast(e.message, 'error'); }
     };
+    $('#exAddItem', root).onclick = async () => {
+      const inp = $('#exItem', root);
+      let name = (inp.value || '').trim(); if (!name) { name = (prompt('New sub-category (bill item):') || '').trim(); }
+      if (!name) return;
+      try { const v = await Store.addExpenseItem(name); inp.value = v; $('#exItemsDL', root).innerHTML = Store.expenseItems().map(x => `<option value="${U.esc(x)}"></option>`).join(''); U.toast('Sub-category added', 'success'); }
+      catch (e) { U.toast(e.message, 'error'); }
+    };
     $('#exSave', root).onclick = async () => {
       try {
         const data = {
           date: $('#exDate', root).value, amount: $('#exAmount', root).value,
-          category: $('#exCat', root).value, business: $('#exBiz', root).value,
+          category: $('#exCat', root).value, item: $('#exItem', root).value, business: $('#exBiz', root).value,
           billNo: $('#exBill', root).value, mode: $('#exMode', root).value,
           reference: $('#exRef', root).value, payee: $('#exPayee', root).value, note: $('#exNote', root).value
         };
@@ -2504,6 +2516,43 @@
       $$('[data-ecdel]', root).forEach(b => b.onclick = async () => {
         if (!confirm('Delete this category? Existing expense records keep their saved category name.')) return;
         await Store.removeExpenseCat(b.dataset.ecdel); U.toast('Deleted', 'success'); render();
+      });
+    }
+    render();
+  }
+
+  let expItemsFilter = '';
+  function expenseItemsModal() {
+    const root = document.getElementById('modalRoot');
+    function render() {
+      const q = expItemsFilter.trim().toLowerCase();
+      const all = Store.expenseItems();
+      const items = q ? all.filter(x => x.toLowerCase().includes(q)) : all;
+      root.innerHTML = `
+        <div class="modal-backdrop" id="eiBackdrop"><div class="modal">
+          <div class="modal-head"><h3>Sub-categories (bill items)</h3><button class="x-close" id="eiClose">&times;</button></div>
+          <div class="modal-body">
+            <div class="flex gap wrap" style="margin-bottom:10px">
+              <input id="eiNew" placeholder="New sub-category" style="flex:1"/>
+              <button class="btn primary" id="eiAdd">＋ Add</button>
+            </div>
+            <input id="eiSearch" type="search" placeholder="Search ${all.length} sub-categories…" value="${U.esc(expItemsFilter)}" style="width:100%;margin-bottom:8px"/>
+            <div class="table-scroll" style="max-height:46vh"><table><tbody>
+              ${items.map(x => `<tr><td>${U.esc(x)}</td><td class="t-right"><button class="btn sm danger" data-eidel="${U.esc(x)}">Delete</button></td></tr>`).join('') || '<tr><td class="empty">No match.</td></tr>'}
+            </tbody></table></div>
+          </div>
+          <div class="modal-foot"><span class="muted" style="margin-right:auto">${items.length} of ${all.length}</span><button class="btn" id="eiDone">Done</button></div>
+        </div></div>`;
+      const close = () => { root.innerHTML = ''; expenses(); };
+      $('#eiClose', root).onclick = close; $('#eiDone', root).onclick = close;
+      $('#eiBackdrop', root).onclick = e => { if (e.target.id === 'eiBackdrop') close(); };
+      $('#eiAdd', root).onclick = async () => {
+        try { await Store.addExpenseItem($('#eiNew', root).value); U.toast('Added', 'success'); expItemsFilter = ''; render(); }
+        catch (e) { U.toast(e.message, 'error'); }
+      };
+      $('#eiSearch', root).oninput = U.debounce(e => { expItemsFilter = e.target.value; render(); const s = $('#eiSearch', root); if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); } }, 200);
+      $$('[data-eidel]', root).forEach(b => b.onclick = async () => {
+        await Store.removeExpenseItem(b.dataset.eidel); U.toast('Deleted', 'success'); render();
       });
     }
     render();

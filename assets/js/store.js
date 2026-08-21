@@ -181,6 +181,53 @@
   ];
   function slugKey(s) { return String(s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || ('c' + Date.now()); }
 
+  // Expense SUB-CATEGORIES: the specific bill item/purpose the account picks
+  // (e.g. PETROL, BOOKS, SALARY). A flat, admin-editable list; account entries
+  // may also add a new one on the fly. Stored in meta.expenseItems.
+  const DEFAULT_EXPENSE_ITEMS = [
+    "3MM ACRYLIC", "AAC BLOCK", "ABACUS BOOKS", "ABACUS SALARY",
+    "ABACUS STAFF SALARY", "AC", "ACADEMIC DIRECTOR", "ADMIN HEAD",
+    "ADMIN OFFICE", "ADVERTISEMENT", "ANNUAL DAY", "APPLICATION FEES",
+    "APPROVAL", "ARABIC BOOK PRINT", "ARCHERY", "ASSETS",
+    "ATTENDERS", "AUTO CHARGES", "BAG", "BAND DRESS",
+    "BANNER", "BIRTHDAY GIFT CARD", "BONUS", "BOOKS",
+    "BOUQUETS", "BRICKS", "BUS RENTAL", "BUS SEAT COVER",
+    "BUS STICKER", "CALENDAR", "CAMERA STAND", "CANVASING",
+    "CARPENTER", "CARROM BOARD", "CEMENT", "CENTRING",
+    "CERTIFICATE", "CHAIRMAN SIR", "CHAIRMAN SIR APPROVAL", "CHEMICAL",
+    "CHESS MAT", "CLEANING MATERIAL", "COFFEE & TEA POWDER", "CONCRETE",
+    "CONTRIBUTION", "DIRECTOR SALARY", "DOOR CLOSER", "DR.K SIR LAPTOP SERVICE",
+    "DRIVER BATTA", "DRIVER SALARY", "DRIVER SALARY INCREMENT", "EB BILL",
+    "ECA & CCA SYLLABUS", "EDUCATIONAL HELP", "ELECTRICAL MATERIAL", "ELECTRICIAN",
+    "ERP SOFTWARE", "ESIC & PF", "EVENING EXTRA TRIP", "EXTRA SPORTS",
+    "FAN", "FEES CARD", "FILLING CHARGES", "FIRE CLOSING AMOUNT",
+    "FIRE GAS FILLING", "FIRST AID KIT", "FOOD", "FRONT GLASS",
+    "FUEL TANK COVER", "FURNITURE TRANSPORT", "G.P MAM ROOM ALTERATION", "GENERAL CHECKUP",
+    "GRAND FATHER", "GRASS KILLER TAP & GO", "GREASE", "GUIDE",
+    "GUM", "HANDWRITING CLASS", "HIJAB", "HOUSE KEEPING",
+    "I.D CARD", "INDEPENDENCE DAY", "INSPECTION AMOUNT", "INSURANCE",
+    "INTERACTIVE PANEL", "IT DEPARTMENT", "JCB WORK", "JUMMAH",
+    "KABADDI T-SHIRT SET", "KG UNIFORM", "LAB MATERIALS", "LABOUR",
+    "LABOUR MANSOON", "LABOUR PAINTER", "LADDER", "LAND & BUILDING",
+    "LOADING & UNLOADING", "MAINTENANCE", "MAKKANA", "MAT",
+    "MEDICINE", "MILK", "MONTH OF TEACHER", "NEWSPAPER",
+    "NOTE BOOK", "NUMBER PLATE FIXING", "OIL CHANGING", "PANTRY",
+    "PERSONAL", "PETROL", "POLLUTION TEST", "PRESS",
+    "PRINCIPAL SALARY", "PRINTER TONER", "PROPERTY TAX", "PUNCTURE",
+    "RAFEEQUE BIKE", "RECEIPT BOOK", "REGISTER BOOK", "REPAIR & MAINTENANCE",
+    "REPAIR SERVICE", "RIBBON (ID CARD)", "RO FILTER", "ROBO",
+    "RUBBER STAMP", "SALARY", "SAND / CEMENT", "SANITATION CERTIFICATE",
+    "SCHOOL BUS STICKERS", "SEAT COVER", "SECURITY SALARY", "SERVICE",
+    "SHOE", "SOLAR ISSUING", "SPORTS MATERIALS", "STAFF UNIFORM",
+    "STAFF UNIFORM (NURSERY)", "STEEL FRAME", "STUDENT UNIFORM", "STUDENTS DIARY",
+    "STUDENTS UNIFORM", "SUGAR", "SYNTHETIC MATERIALS", "TAMIL BOOK",
+    "TEACHER OF MONTH", "TEACHER SALARY", "TEACHER TABLE", "TEACHER TRAINING",
+    "TEACHER UNIFORM", "THROW BALL COACH", "TRANSPORT HEAD", "TRAVELLING ALLOWANCE",
+    "TUITION SALARY", "TURBAN OIL", "TYRE CHANGING", "UNIFORM STUDENT",
+    "UTILITY", "VOC BUILDING NAME CHANGE", "VOLLEY BALL", "VOLLEY BALL PITCH",
+    "WIFI"
+  ];
+
   // Rebuild the HEAD_* lookups (in place) from a fee-head config array.
   function rebuildHeads(feeHeads) {
     HEAD_ORDER.length = 0;
@@ -214,7 +261,7 @@
     SCHOOL_WHATSAPP, SCHOOL_WHATSAPP_DISPLAY, DEFAULT_FEE_HEADS,
     REPORT, isKG, MULTI_HEADS,
     PAGES, PAGE_KEYS, ROLES, ROLE_LABEL, defaultPagesFor, pageListFor,
-    DEFAULT_EXPENSE_CATS,
+    DEFAULT_EXPENSE_CATS, DEFAULT_EXPENSE_ITEMS,
 
     serverMode() { return serverMode; },
 
@@ -715,16 +762,42 @@
       this.meta.expenseCats = this._expenseCatList().filter(c => c.key !== key);
       await this.persist();
     },
+    // Sub-categories (bill item / purpose) — flat list of labels.
+    expenseItems() {
+      const m = this.meta.expenseItems;
+      return (Array.isArray(m) && m.length) ? m.slice() : DEFAULT_EXPENSE_ITEMS.slice();
+    },
+    _expenseItemList() {
+      if (!Array.isArray(this.meta.expenseItems) || !this.meta.expenseItems.length) this.meta.expenseItems = this.expenseItems();
+      return this.meta.expenseItems;
+    },
+    async addExpenseItem(label) {
+      label = String(label || '').trim(); if (!label) throw new Error('Sub-category name is required');
+      const list = this._expenseItemList();
+      const existing = list.find(x => x.toLowerCase() === label.toLowerCase());
+      if (existing) return existing; // already there (case-insensitive)
+      list.push(label);
+      list.sort((a, b) => a.localeCompare(b));
+      await this.persist();
+      return label;
+    },
+    async removeExpenseItem(label) {
+      this.meta.expenseItems = this._expenseItemList().filter(x => x.toLowerCase() !== String(label).toLowerCase());
+      await this.persist();
+    },
     async addExpense(e) {
       const amount = Math.round((Number(e.amount) || 0) * 100) / 100;
       if (!(amount > 0)) throw new Error('Enter a valid amount');
       const cat = this.expenseCat(e.category);
       const business = BUSINESSES[e.business] ? e.business : (cat ? cat.business : 'school');
+      const item = String(e.item || '').trim();
+      if (item) { const list = this._expenseItemList(); if (!list.some(x => x.toLowerCase() === item.toLowerCase())) { list.push(item); list.sort((a, b) => a.localeCompare(b)); } }
       const rec = {
         id: U.uid(),
         date: e.date || U.todayISO(),
         category: e.category || (cat ? cat.key : ''),
         categoryLabel: cat ? cat.label : (e.categoryLabel || ''),
+        item,
         business, businessName: (BUSINESSES[business] || {}).name || '',
         billNo: String(e.billNo || '').trim(),
         reference: String(e.reference || '').trim(),
@@ -743,6 +816,7 @@
       const e = this.expenses.find(x => x.id === id); if (!e) return;
       if (patch.date != null) e.date = patch.date;
       if (patch.category != null) { const c = this.expenseCat(patch.category); e.category = patch.category; if (c) e.categoryLabel = c.label; }
+      if (patch.item != null) { const it = String(patch.item).trim(); e.item = it; if (it) { const list = this._expenseItemList(); if (!list.some(x => x.toLowerCase() === it.toLowerCase())) { list.push(it); list.sort((a, b) => a.localeCompare(b)); } } }
       if (patch.business != null && BUSINESSES[patch.business]) { e.business = patch.business; e.businessName = BUSINESSES[patch.business].name; }
       if (patch.billNo != null) e.billNo = String(patch.billNo).trim();
       if (patch.reference != null) e.reference = String(patch.reference).trim();
