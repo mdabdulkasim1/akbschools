@@ -20,7 +20,7 @@
   })();
 
   const DB_NAME = 'akb_fees';
-  const DB_VERSION = 2;
+  const DB_VERSION = 3;
   const STORES = ['students', 'payments', 'meta', 'users'];
 
   // Business entities / bank accounts (from PAYMENT COLLECTION SUMMARY REPO)
@@ -118,6 +118,7 @@
     { key: 'students',    label: 'Students',          icon: '👨‍🎓' },
     { key: 'collect',     label: 'Receive Payment',   icon: '🧾' },
     { key: 'collections', label: 'Collections',       icon: '💵' },
+    { key: 'expenses',    label: 'Expenses',          icon: '💸' },
     { key: 'reports',     label: 'Reports',           icon: '📈' },
     { key: 'attendance',  label: 'Attendance',        icon: '📝' },
     { key: 'attreport',   label: 'Attendance Report', icon: '📅' },
@@ -129,7 +130,7 @@
   const PAGE_KEYS = PAGES.map(p => p.key);
   // Money pages: collecting payments / issuing receipts / viewing collections.
   // Restricted to Account + Administrator only, regardless of page grants.
-  const FINANCIAL_PAGES = ['collect', 'collections'];
+  const FINANCIAL_PAGES = ['collect', 'collections', 'expenses'];
   function roleCanCollect(role) { return role === 'admin' || role === 'account'; }
   // Pages that may be offered to a role in the access picker (hide money pages
   // for roles that can never collect).
@@ -146,7 +147,7 @@
   // Sensible starting page-set for each role (admin => everything).
   const DEFAULT_PAGES = {
     admin: PAGE_KEYS.slice(),
-    account: ['dashboard', 'students', 'collect', 'collections', 'reports'],
+    account: ['dashboard', 'students', 'collect', 'collections', 'expenses', 'reports'],
     teacher: ['attendance', 'marks'],
     akbch_academics: ['dashboard', 'students', 'attendance', 'attreport', 'marks', 'academics'],
     akb_admins: ['dashboard', 'students', 'reports', 'attendance', 'attreport', 'marks', 'academics']
@@ -162,6 +163,23 @@
     if (!roleCanCollect(u.role)) list = list.filter(k => FINANCIAL_PAGES.indexOf(k) < 0);
     return list;
   }
+
+  /* ---- Expenses ----
+   * Expense categories, each defaulting to the firm (business) that usually
+   * bears it — but the account may pick a different firm on any entry. The list
+   * is admin-editable (add/rename/remove) and stored in meta.expenseCats. */
+  const DEFAULT_EXPENSE_CATS = [
+    { key: 'academic',  label: 'Academic',       business: 'school' },
+    { key: 'admin',     label: 'Admin',          business: 'school' },
+    { key: 'transport', label: 'Transport',      business: 'falcon' },
+    { key: 'pantry',    label: 'Pantry',         business: 'school' },
+    { key: 'event',     label: 'Event Expense',  business: 'co' },
+    { key: 'sports',    label: 'Sports',         business: 'co' },
+    { key: 'books',     label: 'Books',          business: 'co' },
+    { key: 'uniform',   label: 'Uniform',        business: 'co' },
+    { key: 'salary',    label: 'Salary',         business: 'school' }
+  ];
+  function slugKey(s) { return String(s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || ('c' + Date.now()); }
 
   // Rebuild the HEAD_* lookups (in place) from a fee-head config array.
   function rebuildHeads(feeHeads) {
@@ -188,6 +206,7 @@
     students: [],   // in-memory cache
     payments: [],
     users: [],
+    expenses: [],
     feeHeads: [],
     meta: {},
     currentUser: null,
@@ -195,6 +214,7 @@
     SCHOOL_WHATSAPP, SCHOOL_WHATSAPP_DISPLAY, DEFAULT_FEE_HEADS,
     REPORT, isKG, MULTI_HEADS,
     PAGES, PAGE_KEYS, ROLES, ROLE_LABEL, defaultPagesFor, pageListFor,
+    DEFAULT_EXPENSE_CATS,
 
     serverMode() { return serverMode; },
 
@@ -256,13 +276,14 @@
     },
 
     /* ---- persistence (server if available, else IndexedDB/localStorage) ---- */
-    _snapshot() { return { students: this.students, payments: this.payments, users: this.users, meta: this.meta }; },
+    _snapshot() { return { students: this.students, payments: this.payments, users: this.users, expenses: this.expenses, meta: this.meta }; },
     _applyServer(dbObj) {
       baseVersion = (dbObj && dbObj.version) || 0;
       const st = (dbObj && dbObj.state) || {};
       this.students = st.students || [];
       this.payments = st.payments || [];
       this.users = st.users || [];
+      this.expenses = st.expenses || [];
       this.meta = st.meta || {};
       if (Array.isArray(this.meta.feeHeads) && this.meta.feeHeads.length) { this.feeHeads = this.meta.feeHeads; rebuildHeads(this.feeHeads); }
       this.recomputeAll();
@@ -277,11 +298,13 @@
         await idbClear('students'); await idbPutMany('students', this.students);
         await idbClear('payments'); await idbPutMany('payments', this.payments);
         await idbClear('users'); await idbPutMany('users', this.users);
+        await idbClear('expenses'); await idbPutMany('expenses', this.expenses);
         await idbPut('meta', { id: 'meta', value: this.meta });
       } else {
         LS.setItem('akb_students', JSON.stringify(this.students));
         LS.setItem('akb_payments', JSON.stringify(this.payments));
         LS.setItem('akb_users', JSON.stringify(this.users));
+        LS.setItem('akb_expenses', JSON.stringify(this.expenses));
         LS.setItem('akb_meta', JSON.stringify(this.meta));
       }
     },
@@ -295,6 +318,7 @@
           await idbClear('students'); await idbPutMany('students', this.students);
           await idbClear('payments'); await idbPutMany('payments', this.payments);
           await idbClear('users'); await idbPutMany('users', this.users);
+          await idbClear('expenses'); await idbPutMany('expenses', this.expenses);
           await idbPut('meta', { id: 'meta', value: this.meta });
         } catch (e) { /* mirror is best-effort */ }
       });
@@ -326,9 +350,13 @@
       // Payments: union by id — never drop a receipt recorded on this device.
       const payById = new Map(srvPayments.map(p => [p.id, p]));
       this.payments.forEach(p => { if (p && !payById.has(p.id)) payById.set(p.id, p); });
+      // Expenses: union by id — never drop an expense recorded on this device.
+      const expById = new Map((st.expenses || []).map(e => [e.id, e]));
+      this.expenses.forEach(e => { if (e && !expById.has(e.id)) expById.set(e.id, e); });
       this.students = st.students || [];
       this.meta = st.meta || {};
       this.payments = Array.from(payById.values());
+      this.expenses = Array.from(expById.values());
       this.users = mergedUsers;
       if (Array.isArray(this.meta.feeHeads) && this.meta.feeHeads.length) { this.feeHeads = this.meta.feeHeads; rebuildHeads(this.feeHeads); }
       baseVersion = (serverDb && serverDb.version) || 0;
@@ -371,12 +399,14 @@
         this.students = await idbAll('students');
         this.payments = await idbAll('payments');
         this.users = await idbAll('users');
+        this.expenses = (await idbAll('expenses')) || [];
         const metaRows = await idbAll('meta');
         this.meta = (metaRows[0] && metaRows[0].value) || {};
       } else {
         this.students = JSON.parse(LS.getItem('akb_students') || '[]');
         this.payments = JSON.parse(LS.getItem('akb_payments') || '[]');
         this.users = JSON.parse(LS.getItem('akb_users') || '[]');
+        this.expenses = JSON.parse(LS.getItem('akb_expenses') || '[]');
         this.meta = JSON.parse(LS.getItem('akb_meta') || '{}');
       }
     },
@@ -653,6 +683,78 @@
     studentPayments(id) {
       return this.payments.filter(p => p.studentId === id)
         .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    },
+
+    /* ---- expenses (admin/account only) ---- */
+    expenseCats() {
+      const m = this.meta.expenseCats;
+      return (Array.isArray(m) && m.length) ? m : DEFAULT_EXPENSE_CATS.map(c => Object.assign({}, c));
+    },
+    _expenseCatList() { // the mutable, persisted list (seed from defaults on first use)
+      if (!Array.isArray(this.meta.expenseCats) || !this.meta.expenseCats.length) this.meta.expenseCats = this.expenseCats();
+      return this.meta.expenseCats;
+    },
+    expenseCat(key) { return this.expenseCats().find(c => c.key === key) || null; },
+    async addExpenseCat(label, business) {
+      label = String(label || '').trim(); if (!label) throw new Error('Category name is required');
+      const list = this._expenseCatList();
+      if (list.some(c => c.label.toLowerCase() === label.toLowerCase())) throw new Error('That category already exists');
+      const biz = BUSINESSES[business] ? business : 'school';
+      let base = slugKey(label), k = base, i = 2; while (list.some(c => c.key === k)) k = base + '_' + (i++);
+      list.push({ key: k, label, business: biz });
+      await this.persist();
+      return k;
+    },
+    async renameExpenseCat(key, label, business) {
+      const c = this._expenseCatList().find(x => x.key === key); if (!c) return;
+      if (label != null) { label = String(label).trim(); if (label) c.label = label; }
+      if (business != null && BUSINESSES[business]) c.business = business;
+      await this.persist();
+    },
+    async removeExpenseCat(key) {
+      this.meta.expenseCats = this._expenseCatList().filter(c => c.key !== key);
+      await this.persist();
+    },
+    async addExpense(e) {
+      const amount = Math.round((Number(e.amount) || 0) * 100) / 100;
+      if (!(amount > 0)) throw new Error('Enter a valid amount');
+      const cat = this.expenseCat(e.category);
+      const business = BUSINESSES[e.business] ? e.business : (cat ? cat.business : 'school');
+      const rec = {
+        id: U.uid(),
+        date: e.date || U.todayISO(),
+        category: e.category || (cat ? cat.key : ''),
+        categoryLabel: cat ? cat.label : (e.categoryLabel || ''),
+        business, businessName: (BUSINESSES[business] || {}).name || '',
+        billNo: String(e.billNo || '').trim(),
+        reference: String(e.reference || '').trim(),
+        payee: String(e.payee || '').trim(),
+        mode: e.mode || 'Cash',
+        note: String(e.note || '').trim(),
+        amount,
+        createdAt: new Date().toISOString(),
+        createdBy: (this.currentUser && this.currentUser.username) || ''
+      };
+      this.expenses.push(rec);
+      await this.persist();
+      return rec;
+    },
+    async updateExpense(id, patch) {
+      const e = this.expenses.find(x => x.id === id); if (!e) return;
+      if (patch.date != null) e.date = patch.date;
+      if (patch.category != null) { const c = this.expenseCat(patch.category); e.category = patch.category; if (c) e.categoryLabel = c.label; }
+      if (patch.business != null && BUSINESSES[patch.business]) { e.business = patch.business; e.businessName = BUSINESSES[patch.business].name; }
+      if (patch.billNo != null) e.billNo = String(patch.billNo).trim();
+      if (patch.reference != null) e.reference = String(patch.reference).trim();
+      if (patch.payee != null) e.payee = String(patch.payee).trim();
+      if (patch.mode != null) e.mode = patch.mode;
+      if (patch.note != null) e.note = String(patch.note).trim();
+      if (patch.amount != null) { const a = Math.round((Number(patch.amount) || 0) * 100) / 100; if (a > 0) e.amount = a; }
+      await this.persist();
+    },
+    async deleteExpense(id) {
+      this.expenses = this.expenses.filter(e => e.id !== id);
+      await this.persist();
     },
 
     /* ---- students: add ---- */
@@ -953,7 +1055,7 @@
     /* ---- backup ---- */
     exportAll(includeUsers) {
       const o = { app: 'akb-fees', version: 2, exportedAt: new Date().toISOString(),
-        meta: this.meta, students: this.students, payments: this.payments };
+        meta: this.meta, students: this.students, payments: this.payments, expenses: this.expenses };
       if (includeUsers) o.users = this.users;
       return o;
     },
@@ -961,6 +1063,7 @@
       if (!obj || !Array.isArray(obj.students)) throw new Error('Invalid backup file');
       this.students = obj.students.map(normalizeStudent);
       this.payments = Array.isArray(obj.payments) ? obj.payments : [];
+      this.expenses = Array.isArray(obj.expenses) ? obj.expenses : [];
       this.meta = obj.meta || { seeded: true, receiptSeq: 0 };
       this.meta.seeded = true;
       if (Array.isArray(obj.users) && obj.users.length) this.users = obj.users;
@@ -1022,6 +1125,7 @@
         if (!d.objectStoreNames.contains('payments')) d.createObjectStore('payments', { keyPath: 'id' });
         if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta', { keyPath: 'id' });
         if (!d.objectStoreNames.contains('users')) d.createObjectStore('users', { keyPath: 'username' });
+        if (!d.objectStoreNames.contains('expenses')) d.createObjectStore('expenses', { keyPath: 'id' });
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);

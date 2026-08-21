@@ -56,6 +56,7 @@
         case 'business': setActive('dashboard'); Views.businessDashboard(decodeURIComponent(seg[1] || ''), params); break;
         case 'collect': setActive('collect'); Views.collect(); break;
         case 'collections': setActive('collections'); Views.collections(params); break;
+        case 'expenses': setActive('expenses'); Views.expenses(params); break;
         case 'reports': setActive('reports'); Views.reports(params); break;
         case 'attendance': setActive('attendance'); Views.attendance(params); break;
         case 'attreport': setActive('attreport'); Views.attReport(params); break;

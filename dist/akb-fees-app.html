@@ -325,6 +325,7 @@ tr.row-absent{background:var(--red-l)}
         <a href="#/students" data-route="students" data-roles="admin account"><span class="ico">👨‍🎓</span> Students</a>
         <a href="#/collect" data-route="collect" data-roles="admin account"><span class="ico">🧾</span> Receive Payment</a>
         <a href="#/collections" data-route="collections" data-roles="admin account"><span class="ico">💵</span> Collections</a>
+        <a href="#/expenses" data-route="expenses" data-roles="admin account"><span class="ico">💸</span> Expenses</a>
         <a href="#/reports" data-route="reports" data-roles="admin account"><span class="ico">📈</span> Reports</a>
         <a href="#/attendance" data-route="attendance" data-roles="admin teacher"><span class="ico">📝</span> Attendance</a>
         <a href="#/attreport" data-route="attreport" data-roles="admin"><span class="ico">📅</span> Attendance Report</a>
@@ -554,7 +555,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
   })();
 
   const DB_NAME = 'akb_fees';
-  const DB_VERSION = 2;
+  const DB_VERSION = 3;
   const STORES = ['students', 'payments', 'meta', 'users'];
 
   // Business entities / bank accounts (from PAYMENT COLLECTION SUMMARY REPO)
@@ -652,6 +653,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     { key: 'students',    label: 'Students',          icon: '👨‍🎓' },
     { key: 'collect',     label: 'Receive Payment',   icon: '🧾' },
     { key: 'collections', label: 'Collections',       icon: '💵' },
+    { key: 'expenses',    label: 'Expenses',          icon: '💸' },
     { key: 'reports',     label: 'Reports',           icon: '📈' },
     { key: 'attendance',  label: 'Attendance',        icon: '📝' },
     { key: 'attreport',   label: 'Attendance Report', icon: '📅' },
@@ -663,7 +665,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
   const PAGE_KEYS = PAGES.map(p => p.key);
   // Money pages: collecting payments / issuing receipts / viewing collections.
   // Restricted to Account + Administrator only, regardless of page grants.
-  const FINANCIAL_PAGES = ['collect', 'collections'];
+  const FINANCIAL_PAGES = ['collect', 'collections', 'expenses'];
   function roleCanCollect(role) { return role === 'admin' || role === 'account'; }
   // Pages that may be offered to a role in the access picker (hide money pages
   // for roles that can never collect).
@@ -680,7 +682,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
   // Sensible starting page-set for each role (admin => everything).
   const DEFAULT_PAGES = {
     admin: PAGE_KEYS.slice(),
-    account: ['dashboard', 'students', 'collect', 'collections', 'reports'],
+    account: ['dashboard', 'students', 'collect', 'collections', 'expenses', 'reports'],
     teacher: ['attendance', 'marks'],
     akbch_academics: ['dashboard', 'students', 'attendance', 'attreport', 'marks', 'academics'],
     akb_admins: ['dashboard', 'students', 'reports', 'attendance', 'attreport', 'marks', 'academics']
@@ -696,6 +698,23 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     if (!roleCanCollect(u.role)) list = list.filter(k => FINANCIAL_PAGES.indexOf(k) < 0);
     return list;
   }
+
+  /* ---- Expenses ----
+   * Expense categories, each defaulting to the firm (business) that usually
+   * bears it — but the account may pick a different firm on any entry. The list
+   * is admin-editable (add/rename/remove) and stored in meta.expenseCats. */
+  const DEFAULT_EXPENSE_CATS = [
+    { key: 'academic',  label: 'Academic',       business: 'school' },
+    { key: 'admin',     label: 'Admin',          business: 'school' },
+    { key: 'transport', label: 'Transport',      business: 'falcon' },
+    { key: 'pantry',    label: 'Pantry',         business: 'school' },
+    { key: 'event',     label: 'Event Expense',  business: 'co' },
+    { key: 'sports',    label: 'Sports',         business: 'co' },
+    { key: 'books',     label: 'Books',          business: 'co' },
+    { key: 'uniform',   label: 'Uniform',        business: 'co' },
+    { key: 'salary',    label: 'Salary',         business: 'school' }
+  ];
+  function slugKey(s) { return String(s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || ('c' + Date.now()); }
 
   // Rebuild the HEAD_* lookups (in place) from a fee-head config array.
   function rebuildHeads(feeHeads) {
@@ -722,6 +741,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     students: [],   // in-memory cache
     payments: [],
     users: [],
+    expenses: [],
     feeHeads: [],
     meta: {},
     currentUser: null,
@@ -729,6 +749,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     SCHOOL_WHATSAPP, SCHOOL_WHATSAPP_DISPLAY, DEFAULT_FEE_HEADS,
     REPORT, isKG, MULTI_HEADS,
     PAGES, PAGE_KEYS, ROLES, ROLE_LABEL, defaultPagesFor, pageListFor,
+    DEFAULT_EXPENSE_CATS,
 
     serverMode() { return serverMode; },
 
@@ -790,13 +811,14 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     },
 
     /* ---- persistence (server if available, else IndexedDB/localStorage) ---- */
-    _snapshot() { return { students: this.students, payments: this.payments, users: this.users, meta: this.meta }; },
+    _snapshot() { return { students: this.students, payments: this.payments, users: this.users, expenses: this.expenses, meta: this.meta }; },
     _applyServer(dbObj) {
       baseVersion = (dbObj && dbObj.version) || 0;
       const st = (dbObj && dbObj.state) || {};
       this.students = st.students || [];
       this.payments = st.payments || [];
       this.users = st.users || [];
+      this.expenses = st.expenses || [];
       this.meta = st.meta || {};
       if (Array.isArray(this.meta.feeHeads) && this.meta.feeHeads.length) { this.feeHeads = this.meta.feeHeads; rebuildHeads(this.feeHeads); }
       this.recomputeAll();
@@ -811,11 +833,13 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
         await idbClear('students'); await idbPutMany('students', this.students);
         await idbClear('payments'); await idbPutMany('payments', this.payments);
         await idbClear('users'); await idbPutMany('users', this.users);
+        await idbClear('expenses'); await idbPutMany('expenses', this.expenses);
         await idbPut('meta', { id: 'meta', value: this.meta });
       } else {
         LS.setItem('akb_students', JSON.stringify(this.students));
         LS.setItem('akb_payments', JSON.stringify(this.payments));
         LS.setItem('akb_users', JSON.stringify(this.users));
+        LS.setItem('akb_expenses', JSON.stringify(this.expenses));
         LS.setItem('akb_meta', JSON.stringify(this.meta));
       }
     },
@@ -829,6 +853,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
           await idbClear('students'); await idbPutMany('students', this.students);
           await idbClear('payments'); await idbPutMany('payments', this.payments);
           await idbClear('users'); await idbPutMany('users', this.users);
+          await idbClear('expenses'); await idbPutMany('expenses', this.expenses);
           await idbPut('meta', { id: 'meta', value: this.meta });
         } catch (e) { /* mirror is best-effort */ }
       });
@@ -860,9 +885,13 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       // Payments: union by id — never drop a receipt recorded on this device.
       const payById = new Map(srvPayments.map(p => [p.id, p]));
       this.payments.forEach(p => { if (p && !payById.has(p.id)) payById.set(p.id, p); });
+      // Expenses: union by id — never drop an expense recorded on this device.
+      const expById = new Map((st.expenses || []).map(e => [e.id, e]));
+      this.expenses.forEach(e => { if (e && !expById.has(e.id)) expById.set(e.id, e); });
       this.students = st.students || [];
       this.meta = st.meta || {};
       this.payments = Array.from(payById.values());
+      this.expenses = Array.from(expById.values());
       this.users = mergedUsers;
       if (Array.isArray(this.meta.feeHeads) && this.meta.feeHeads.length) { this.feeHeads = this.meta.feeHeads; rebuildHeads(this.feeHeads); }
       baseVersion = (serverDb && serverDb.version) || 0;
@@ -905,12 +934,14 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
         this.students = await idbAll('students');
         this.payments = await idbAll('payments');
         this.users = await idbAll('users');
+        this.expenses = (await idbAll('expenses')) || [];
         const metaRows = await idbAll('meta');
         this.meta = (metaRows[0] && metaRows[0].value) || {};
       } else {
         this.students = JSON.parse(LS.getItem('akb_students') || '[]');
         this.payments = JSON.parse(LS.getItem('akb_payments') || '[]');
         this.users = JSON.parse(LS.getItem('akb_users') || '[]');
+        this.expenses = JSON.parse(LS.getItem('akb_expenses') || '[]');
         this.meta = JSON.parse(LS.getItem('akb_meta') || '{}');
       }
     },
@@ -1187,6 +1218,78 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     studentPayments(id) {
       return this.payments.filter(p => p.studentId === id)
         .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    },
+
+    /* ---- expenses (admin/account only) ---- */
+    expenseCats() {
+      const m = this.meta.expenseCats;
+      return (Array.isArray(m) && m.length) ? m : DEFAULT_EXPENSE_CATS.map(c => Object.assign({}, c));
+    },
+    _expenseCatList() { // the mutable, persisted list (seed from defaults on first use)
+      if (!Array.isArray(this.meta.expenseCats) || !this.meta.expenseCats.length) this.meta.expenseCats = this.expenseCats();
+      return this.meta.expenseCats;
+    },
+    expenseCat(key) { return this.expenseCats().find(c => c.key === key) || null; },
+    async addExpenseCat(label, business) {
+      label = String(label || '').trim(); if (!label) throw new Error('Category name is required');
+      const list = this._expenseCatList();
+      if (list.some(c => c.label.toLowerCase() === label.toLowerCase())) throw new Error('That category already exists');
+      const biz = BUSINESSES[business] ? business : 'school';
+      let base = slugKey(label), k = base, i = 2; while (list.some(c => c.key === k)) k = base + '_' + (i++);
+      list.push({ key: k, label, business: biz });
+      await this.persist();
+      return k;
+    },
+    async renameExpenseCat(key, label, business) {
+      const c = this._expenseCatList().find(x => x.key === key); if (!c) return;
+      if (label != null) { label = String(label).trim(); if (label) c.label = label; }
+      if (business != null && BUSINESSES[business]) c.business = business;
+      await this.persist();
+    },
+    async removeExpenseCat(key) {
+      this.meta.expenseCats = this._expenseCatList().filter(c => c.key !== key);
+      await this.persist();
+    },
+    async addExpense(e) {
+      const amount = Math.round((Number(e.amount) || 0) * 100) / 100;
+      if (!(amount > 0)) throw new Error('Enter a valid amount');
+      const cat = this.expenseCat(e.category);
+      const business = BUSINESSES[e.business] ? e.business : (cat ? cat.business : 'school');
+      const rec = {
+        id: U.uid(),
+        date: e.date || U.todayISO(),
+        category: e.category || (cat ? cat.key : ''),
+        categoryLabel: cat ? cat.label : (e.categoryLabel || ''),
+        business, businessName: (BUSINESSES[business] || {}).name || '',
+        billNo: String(e.billNo || '').trim(),
+        reference: String(e.reference || '').trim(),
+        payee: String(e.payee || '').trim(),
+        mode: e.mode || 'Cash',
+        note: String(e.note || '').trim(),
+        amount,
+        createdAt: new Date().toISOString(),
+        createdBy: (this.currentUser && this.currentUser.username) || ''
+      };
+      this.expenses.push(rec);
+      await this.persist();
+      return rec;
+    },
+    async updateExpense(id, patch) {
+      const e = this.expenses.find(x => x.id === id); if (!e) return;
+      if (patch.date != null) e.date = patch.date;
+      if (patch.category != null) { const c = this.expenseCat(patch.category); e.category = patch.category; if (c) e.categoryLabel = c.label; }
+      if (patch.business != null && BUSINESSES[patch.business]) { e.business = patch.business; e.businessName = BUSINESSES[patch.business].name; }
+      if (patch.billNo != null) e.billNo = String(patch.billNo).trim();
+      if (patch.reference != null) e.reference = String(patch.reference).trim();
+      if (patch.payee != null) e.payee = String(patch.payee).trim();
+      if (patch.mode != null) e.mode = patch.mode;
+      if (patch.note != null) e.note = String(patch.note).trim();
+      if (patch.amount != null) { const a = Math.round((Number(patch.amount) || 0) * 100) / 100; if (a > 0) e.amount = a; }
+      await this.persist();
+    },
+    async deleteExpense(id) {
+      this.expenses = this.expenses.filter(e => e.id !== id);
+      await this.persist();
     },
 
     /* ---- students: add ---- */
@@ -1487,7 +1590,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     /* ---- backup ---- */
     exportAll(includeUsers) {
       const o = { app: 'akb-fees', version: 2, exportedAt: new Date().toISOString(),
-        meta: this.meta, students: this.students, payments: this.payments };
+        meta: this.meta, students: this.students, payments: this.payments, expenses: this.expenses };
       if (includeUsers) o.users = this.users;
       return o;
     },
@@ -1495,6 +1598,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       if (!obj || !Array.isArray(obj.students)) throw new Error('Invalid backup file');
       this.students = obj.students.map(normalizeStudent);
       this.payments = Array.isArray(obj.payments) ? obj.payments : [];
+      this.expenses = Array.isArray(obj.expenses) ? obj.expenses : [];
       this.meta = obj.meta || { seeded: true, receiptSeq: 0 };
       this.meta.seeded = true;
       if (Array.isArray(obj.users) && obj.users.length) this.users = obj.users;
@@ -1556,6 +1660,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
         if (!d.objectStoreNames.contains('payments')) d.createObjectStore('payments', { keyPath: 'id' });
         if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta', { keyPath: 'id' });
         if (!d.objectStoreNames.contains('users')) d.createObjectStore('users', { keyPath: 'username' });
+        if (!d.objectStoreNames.contains('expenses')) d.createObjectStore('expenses', { keyPath: 'id' });
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -4064,7 +4169,183 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     bindNav();
   }
 
-  w.Views = { dashboard, students, studentDetail, businessDashboard, collect, collections, reports, attendance, attReport, marks, academics, users, data, openPaymentModal, changePassword };
+  /* -------------------------------------------------- Expenses (admin/account) */
+  let expState = { q: '', business: '', category: '', month: '' };
+  const EXP_MODES = ['Cash', 'G.Pay', 'Bank', 'Cheque', 'Card'];
+  function expenses() {
+    if (!Store.canCollect()) { view().innerHTML = '<div class="empty">You don’t have access to Expenses.</div>'; return; }
+    const cats = Store.expenseCats();
+    const all = (Store.expenses || []).slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : (a.createdAt < b.createdAt ? 1 : -1)));
+    const ym = expState.month || '';
+    const rows = all.filter(e => {
+      if (expState.business && e.business !== expState.business) return false;
+      if (expState.category && e.category !== expState.category) return false;
+      if (ym && String(e.date || '').slice(0, 7) !== ym) return false;
+      if (expState.q) { const q = expState.q.toLowerCase(); if (!((e.billNo || '') + ' ' + (e.reference || '') + ' ' + (e.payee || '') + ' ' + (e.note || '') + ' ' + (e.categoryLabel || '')).toLowerCase().includes(q)) return false; }
+      return true;
+    });
+    const sum = arr => arr.reduce((a, e) => a + (Number(e.amount) || 0), 0);
+    const thisMonth = new Date().toISOString().slice(0, 7);
+    const totalAll = sum(all), totalMonth = sum(all.filter(e => String(e.date || '').slice(0, 7) === thisMonth)), totalShown = sum(rows);
+    // per-firm totals (of the filtered rows)
+    const byBiz = Store.BUSINESS_ORDER.map(bk => ({ bk, name: Store.BUSINESSES[bk].name, total: sum(rows.filter(e => e.business === bk)) })).filter(x => x.total > 0);
+    const months = Array.from(new Set(all.map(e => String(e.date || '').slice(0, 7)).filter(Boolean))).sort().reverse();
+
+    const tableRows = rows.map(e => `<tr>
+      <td>${U.fmtDate(e.date)}</td>
+      <td><b>${U.esc(e.categoryLabel || e.category || '')}</b></td>
+      <td class="muted" style="font-size:12px">${U.esc(e.businessName || '')}</td>
+      <td class="mono">${U.esc(e.billNo || '')}</td>
+      <td>${U.esc(e.reference || '')}${e.payee ? `<div class="muted" style="font-size:11px">${U.esc(e.payee)}</div>` : ''}</td>
+      <td><span class="pill-mode">${U.esc(e.mode || '')}</span></td>
+      <td class="num" style="color:var(--red);font-weight:600">${U.inr(e.amount)}</td>
+      <td class="t-right"><button class="btn sm" data-exedit="${U.esc(e.id)}">Edit</button> <button class="btn sm danger" data-exdel="${U.esc(e.id)}">✕</button></td></tr>`).join('')
+      || '<tr><td colspan="8" class="empty">No expenses match these filters. Click “＋ Add Expense”.</td></tr>';
+
+    view().innerHTML = `
+      <div class="page-head"><div><h1>Expenses</h1><p>Record and track school expenses by firm &amp; category</p></div>
+        <div class="flex gap">${Store.isAdmin() ? '<button class="btn" id="expCats">Manage categories</button>' : ''}<button class="btn primary" id="addExp">＋ Add Expense</button></div></div>
+      <div class="cards">
+        ${kpi('Total Expenses', U.inr(totalAll), { accent: 'red' })}
+        ${kpi('This Month', U.inr(totalMonth), { accent: 'amber', sub: fmtMonth(thisMonth) })}
+        ${kpi('Entries', all.length, { accent: 'blue' })}
+        ${kpi('Shown (filtered)', U.inr(totalShown), { accent: 'green', sub: rows.length + ' entr' + (rows.length === 1 ? 'y' : 'ies') })}
+      </div>
+      ${byBiz.length ? `<div class="panel"><div class="panel-body pad"><div class="flex gap wrap">${byBiz.map(x => `<span class="badge gray" style="font-size:12px">${U.esc(x.name)}: <b style="color:var(--red)">${U.inr(x.total)}</b></span>`).join('')}</div></div></div>` : ''}
+      <div class="panel">
+        <div class="panel-head"><h2>Expense Records</h2>
+          <div class="toolbar flex gap wrap">
+            <input id="expQ" type="search" placeholder="Search bill / reference / payee…" value="${U.esc(expState.q)}"/>
+            <select id="expBiz"><option value="">All firms</option>${Store.BUSINESS_ORDER.map(b => `<option value="${b}"${expState.business === b ? ' selected' : ''}>${U.esc(Store.BUSINESSES[b].name)}</option>`).join('')}</select>
+            <select id="expCat"><option value="">All categories</option>${cats.map(c => `<option value="${U.esc(c.key)}"${expState.category === c.key ? ' selected' : ''}>${U.esc(c.label)}</option>`).join('')}</select>
+            <select id="expMonth"><option value="">All months</option>${months.map(m => `<option value="${m}"${expState.month === m ? ' selected' : ''}>${fmtMonth(m)}</option>`).join('')}</select>
+            <button class="btn sm" id="expCsv">⬇ CSV</button>
+          </div>
+        </div>
+        <div class="table-scroll"><table>
+          <thead><tr><th>Date</th><th>Category</th><th>Firm</th><th>Bill No</th><th>Reference / Payee</th><th>Mode</th><th class="num">Amount</th><th class="t-right">Actions</th></tr></thead>
+          <tbody>${tableRows}</tbody>
+          <tfoot><tr><td colspan="6">TOTAL (${rows.length})</td><td class="num" style="color:var(--red);font-weight:700">${U.inr(totalShown)}</td><td></td></tr></tfoot>
+        </table></div>
+      </div>`;
+
+    $('#addExp').onclick = () => expenseModal(null);
+    const ec = $('#expCats'); if (ec) ec.onclick = () => expenseCatsModal();
+    $('#expQ').oninput = U.debounce(e => { expState.q = e.target.value; expenses(); }, 200);
+    $('#expBiz').onchange = e => { expState.business = e.target.value; expenses(); };
+    $('#expCat').onchange = e => { expState.category = e.target.value; expenses(); };
+    $('#expMonth').onchange = e => { expState.month = e.target.value; expenses(); };
+    $('#expCsv').onclick = () => exportExpensesCsv(rows);
+    $$('[data-exedit]').forEach(b => b.onclick = () => expenseModal(b.dataset.exedit));
+    $$('[data-exdel]').forEach(b => b.onclick = async () => {
+      if (!confirm('Delete this expense?')) return;
+      await Store.deleteExpense(b.dataset.exdel); U.toast('Expense deleted', 'success'); expenses();
+    });
+  }
+
+  function exportExpensesCsv(rows) {
+    const head = ['Date', 'Category', 'Firm', 'Bill No', 'Reference', 'Payee', 'Mode', 'Amount', 'Note'];
+    const lines = [head.join(',')].concat(rows.map(e => [e.date, e.categoryLabel || e.category, e.businessName, e.billNo, e.reference, e.payee, e.mode, e.amount, e.note]
+      .map(v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`).join(',')));
+    U.download('expenses.csv', lines.join('\n'), 'text/csv');
+  }
+
+  function expenseModal(id) {
+    const editing = id ? (Store.expenses || []).find(e => e.id === id) : null;
+    const cats = Store.expenseCats();
+    const root = document.getElementById('modalRoot');
+    const catOpts = sel => cats.map(c => `<option value="${U.esc(c.key)}"${sel === c.key ? ' selected' : ''}>${U.esc(c.label)}</option>`).join('');
+    const bizOpts = sel => Store.BUSINESS_ORDER.map(b => `<option value="${b}"${sel === b ? ' selected' : ''}>${U.esc(Store.BUSINESSES[b].name)}</option>`).join('');
+    const cur = editing || {};
+    const defCat = cur.category || (cats[0] && cats[0].key) || '';
+    const defBiz = cur.business || (Store.expenseCat(defCat) || {}).business || 'school';
+    root.innerHTML = `
+      <div class="modal-backdrop" id="exBackdrop"><div class="modal">
+        <div class="modal-head"><h3>${editing ? 'Edit expense' : 'Add expense'}</h3><button class="x-close" id="exClose">&times;</button></div>
+        <div class="modal-body">
+          <div class="grid2">
+            <div class="field"><label>Date</label><input type="date" id="exDate" value="${U.esc(cur.date || U.todayISO())}"/></div>
+            <div class="field"><label>Amount (₹)</label><input type="number" min="0" step="1" id="exAmount" value="${cur.amount != null ? U.esc(cur.amount) : ''}" placeholder="0"/></div>
+          </div>
+          <div class="field"><label>Expense category</label>
+            <div class="flex gap"><select id="exCat" style="flex:1">${catOpts(defCat)}</select>${Store.isAdmin() ? '<button class="btn sm" id="exAddCat" type="button">＋ Add</button>' : ''}</div></div>
+          <div class="field"><label>Firm (billed under)</label><select id="exBiz">${bizOpts(defBiz)}</select></div>
+          <div class="grid2">
+            <div class="field"><label>Bill No</label><input id="exBill" value="${U.esc(cur.billNo || '')}" placeholder="e.g. INV-1024"/></div>
+            <div class="field"><label>Mode</label><select id="exMode">${EXP_MODES.map(m => `<option${cur.mode === m ? ' selected' : ''}>${U.esc(m)}</option>`).join('')}</select></div>
+          </div>
+          <div class="field"><label>Reference</label><input id="exRef" value="${U.esc(cur.reference || '')}" placeholder="what it was for"/></div>
+          <div class="field"><label>Paid to / Payee <span class="muted" style="font-weight:400">(optional)</span></label><input id="exPayee" value="${U.esc(cur.payee || '')}" placeholder="vendor / person"/></div>
+          <div class="field"><label>Note <span class="muted" style="font-weight:400">(optional)</span></label><input id="exNote" value="${U.esc(cur.note || '')}"/></div>
+        </div>
+        <div class="modal-foot"><button class="btn" id="exCancel">Cancel</button><button class="btn primary" id="exSave">${editing ? 'Save changes' : 'Save expense'}</button></div>
+      </div></div>`;
+    const close = () => { root.innerHTML = ''; };
+    $('#exClose', root).onclick = close; $('#exCancel', root).onclick = close;
+    $('#exBackdrop', root).onclick = e => { if (e.target.id === 'exBackdrop') close(); };
+    // when the category changes, default the firm to that category's firm
+    $('#exCat', root).onchange = () => { const c = Store.expenseCat($('#exCat', root).value); if (c) $('#exBiz', root).value = c.business; };
+    const addCatBtn = $('#exAddCat', root);
+    if (addCatBtn) addCatBtn.onclick = async () => {
+      const name = prompt('New expense category name:'); if (!name || !name.trim()) return;
+      try { const k = await Store.addExpenseCat(name.trim(), $('#exBiz', root).value); U.toast('Category added', 'success'); $('#exCat', root).innerHTML = catOpts(k); $('#exCat', root).value = k; const c = Store.expenseCat(k); if (c) $('#exBiz', root).value = c.business; }
+      catch (e) { U.toast(e.message, 'error'); }
+    };
+    $('#exSave', root).onclick = async () => {
+      try {
+        const data = {
+          date: $('#exDate', root).value, amount: $('#exAmount', root).value,
+          category: $('#exCat', root).value, business: $('#exBiz', root).value,
+          billNo: $('#exBill', root).value, mode: $('#exMode', root).value,
+          reference: $('#exRef', root).value, payee: $('#exPayee', root).value, note: $('#exNote', root).value
+        };
+        if (editing) await Store.updateExpense(editing.id, data); else await Store.addExpense(data);
+        close();
+        U.toast(editing ? 'Expense updated' : 'Expense added', 'success');
+        expenses();
+      } catch (e) { U.toast(e.message, 'error'); }
+    };
+  }
+
+  function expenseCatsModal() {
+    const root = document.getElementById('modalRoot');
+    function render() {
+      const cats = Store.expenseCats();
+      root.innerHTML = `
+        <div class="modal-backdrop" id="ecBackdrop"><div class="modal">
+          <div class="modal-head"><h3>Expense categories</h3><button class="x-close" id="ecClose">&times;</button></div>
+          <div class="modal-body">
+            <p class="muted">Each category has a default firm; the account can still pick a different firm per entry.</p>
+            <div class="table-scroll"><table><thead><tr><th>Category</th><th>Default firm</th><th class="t-right"></th></tr></thead>
+              <tbody>${cats.map(c => `<tr>
+                <td><b>${U.esc(c.label)}</b></td>
+                <td><select data-ecbiz="${U.esc(c.key)}">${Store.BUSINESS_ORDER.map(b => `<option value="${b}"${c.business === b ? ' selected' : ''}>${U.esc(Store.BUSINESSES[b].name)}</option>`).join('')}</select></td>
+                <td class="t-right"><button class="btn sm danger" data-ecdel="${U.esc(c.key)}">Delete</button></td></tr>`).join('')}</tbody></table></div>
+            <div class="flex gap wrap" style="margin-top:12px">
+              <input id="ecName" placeholder="New category name" style="flex:1"/>
+              <select id="ecNewBiz">${Store.BUSINESS_ORDER.map(b => `<option value="${b}">${U.esc(Store.BUSINESSES[b].name)}</option>`).join('')}</select>
+              <button class="btn primary" id="ecAdd">＋ Add</button>
+            </div>
+          </div>
+          <div class="modal-foot"><button class="btn" id="ecDone">Done</button></div>
+        </div></div>`;
+      const close = () => { root.innerHTML = ''; expenses(); };
+      $('#ecClose', root).onclick = close; $('#ecDone', root).onclick = close;
+      $('#ecBackdrop', root).onclick = e => { if (e.target.id === 'ecBackdrop') close(); };
+      $('#ecAdd', root).onclick = async () => {
+        try { await Store.addExpenseCat($('#ecName', root).value, $('#ecNewBiz', root).value); U.toast('Category added', 'success'); render(); }
+        catch (e) { U.toast(e.message, 'error'); }
+      };
+      $$('[data-ecbiz]', root).forEach(sel => sel.onchange = async () => { await Store.renameExpenseCat(sel.dataset.ecbiz, null, sel.value); U.toast('Updated', 'success'); });
+      $$('[data-ecdel]', root).forEach(b => b.onclick = async () => {
+        if (!confirm('Delete this category? Existing expense records keep their saved category name.')) return;
+        await Store.removeExpenseCat(b.dataset.ecdel); U.toast('Deleted', 'success'); render();
+      });
+    }
+    render();
+  }
+
+  w.Views = { dashboard, students, studentDetail, businessDashboard, collect, collections, expenses, reports, attendance, attReport, marks, academics, users, data, openPaymentModal, changePassword };
 })(window);
 
 </script>
@@ -4127,6 +4408,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
         case 'business': setActive('dashboard'); Views.businessDashboard(decodeURIComponent(seg[1] || ''), params); break;
         case 'collect': setActive('collect'); Views.collect(); break;
         case 'collections': setActive('collections'); Views.collections(params); break;
+        case 'expenses': setActive('expenses'); Views.expenses(params); break;
         case 'reports': setActive('reports'); Views.reports(params); break;
         case 'attendance': setActive('attendance'); Views.attendance(params); break;
         case 'attreport': setActive('attreport'); Views.attReport(params); break;
