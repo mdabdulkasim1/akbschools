@@ -248,6 +248,18 @@
   let useIDB = true;
   // server-shared-state mode (set at init if /api/state is reachable)
   let serverMode = false, baseVersion = 0, syncTimer = null, syncing = false, syncAgain = false, dirty = false;
+  let bootBuildId = null, newBuildSignalled = false;
+  // Compare the server's code build-id with the one this tab booted on; if it
+  // changed, the app was redeployed — signal the UI to reload so no tab keeps
+  // running stale JavaScript (the usual cause of "my change didn't take effect").
+  function checkBuild(obj) {
+    const b = obj && obj.buildId; if (!b) return;
+    if (!bootBuildId) { bootBuildId = b; return; }
+    if (b !== bootBuildId && !newBuildSignalled) {
+      newBuildSignalled = true;
+      try { window.dispatchEvent(new CustomEvent('akb-newbuild')); } catch (e) {}
+    }
+  }
 
   const Store = {
     students: [],   // in-memory cache
@@ -269,7 +281,7 @@
       // Prefer shared server state (all devices see one dataset)
       try {
         const r = await fetch('api/state', { cache: 'no-store' });
-        if (r.ok) { serverMode = true; this._applyServer(await r.json()); }
+        if (r.ok) { serverMode = true; const j = await r.json(); checkBuild(j); this._applyServer(j); }
       } catch (e) { serverMode = false; }
 
       if (!serverMode) {
@@ -373,6 +385,19 @@
     _scheduleSync() { dirty = true; clearTimeout(syncTimer); syncTimer = setTimeout(() => this._syncNow(), 350); this._emitSync(); },
     pendingSync() { return dirty; },
     _emitSync() { try { w.dispatchEvent(new CustomEvent('akb-sync')); } catch (e) {} },
+    // Poll the tiny version endpoint so even an idle tab notices a redeploy and
+    // reloads — before its stale code can overwrite the shared data.
+    async _pollVersion() {
+      if (!serverMode) return;
+      try { const r = await fetch('api/version', { cache: 'no-store' }); if (r.ok) checkBuild(await r.json()); } catch (e) {}
+    },
+    startVersionWatch() {
+      if (!serverMode || this._versionWatch) return;
+      this._versionWatch = true;
+      try { setInterval(() => this._pollVersion(), 60000); } catch (e) {}
+      try { w.addEventListener('focus', () => this._pollVersion()); } catch (e) {}
+      try { w.addEventListener('visibilitychange', () => { if (!document.hidden) this._pollVersion(); }); } catch (e) {}
+    },
     // Overall connection/save state for the UI badge.
     syncState() {
       if (!serverMode) return 'offline';       // not connected to the shared server (this device only)
@@ -430,11 +455,12 @@
           } catch (e) { break; /* offline — will retry on next change/flush */ }
           if (r.status === 409) {
             let srv = null; try { srv = await r.json(); } catch (e) { break; }
+            checkBuild(srv);
             this._mergeOnConflict(srv);               // preserve local users/payments, adopt server base
             if (w.Router && w.Router.render) w.Router.render();
             continue;                                  // retry the PUT with the merged state
           } else if (r.ok) {
-            try { baseVersion = (await r.json()).version; } catch (e) {}
+            try { const j = await r.json(); baseVersion = j.version; checkBuild(j); } catch (e) {}
             dirty = false;
             break;
           } else { break; /* server error — leave dirty, retry later */ }

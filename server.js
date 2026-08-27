@@ -31,6 +31,18 @@ try { nodemailer = require('nodemailer'); } catch (e) { console.warn('nodemailer
 const PORT = process.env.PORT || 3000;
 const ROOT = __dirname;
 const BOOT_AT = new Date().toISOString(); // when this server process last started
+// Content hash of the client code — changes only when the app is redeployed with
+// new code. Clients compare it and reload themselves so a long-open tab can't keep
+// running stale JavaScript after a deploy.
+const BUILD_ID = (() => {
+  try {
+    const crypto = require('crypto');
+    const files = ['index.html', 'assets/js/store.js', 'assets/js/views.js', 'assets/js/app.js', 'assets/js/utils.js', 'assets/js/auth.js', 'assets/js/receipt.js'];
+    const h = crypto.createHash('sha1');
+    files.forEach(f => { try { h.update(fs.readFileSync(path.join(ROOT, f))); } catch (e) {} });
+    return h.digest('hex').slice(0, 12);
+  } catch (e) { return String(Date.now()); }
+})();
 const USER = process.env.APP_USER || 'admin';
 const PASS = process.env.APP_PASSWORD || '';
 const SCHOOL = 'AKB School of Excellence';
@@ -225,13 +237,14 @@ const server = http.createServer(async (req, res) => {
   if (!checkAuth(req)) return unauthorized(res);
   const url = (req.url || '/').split('?')[0];
   try {
-    if (url === '/api/state' && req.method === 'GET') return sendJSON(res, 200, DB);
+    if (url === '/api/state' && req.method === 'GET') return sendJSON(res, 200, Object.assign({ buildId: BUILD_ID }, DB));
     if (url === '/api/state' && req.method === 'PUT') {
       const body = JSON.parse(await readBody(req));
-      if (typeof body.baseVersion === 'number' && body.baseVersion !== DB.version) return sendJSON(res, 409, DB);
+      if (typeof body.baseVersion === 'number' && body.baseVersion !== DB.version) return sendJSON(res, 409, Object.assign({ buildId: BUILD_ID }, DB));
       if (body.state) { DB.state = body.state; DB.version++; await saveDB(); }
-      return sendJSON(res, 200, { version: DB.version });
+      return sendJSON(res, 200, { version: DB.version, buildId: BUILD_ID });
     }
+    if (url === '/api/version' && req.method === 'GET') return sendJSON(res, 200, { buildId: BUILD_ID, version: DB.version });
     if (url === '/api/backup-status' && req.method === 'GET')
       return sendJSON(res, 200, { serverMode: true, emailConfigured: emailConfigured(), to: BACKUP_EMAIL, day: BACKUP_DAY, hour: BACKUP_HOUR, lastBackupAt: DB.lastBackupAt, excel: !!ExcelJS, dataDir: DATA_DIR, version: DB.version, students: (DB.state.students || []).length, payments: (DB.state.payments || []).length, bootAt: BOOT_AT });
     if (url === '/api/backup.xlsx' && req.method === 'GET') {

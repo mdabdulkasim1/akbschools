@@ -141,6 +141,24 @@
     document.addEventListener('click', e => { if (!e.target.closest('.search-wrap')) box.classList.remove('open'); });
   }
 
+  // A newer app version is deployed — flush anything pending, then reload this
+  // tab so it stops running stale code (which could otherwise overwrite data).
+  let reloadingForBuild = false;
+  async function onNewBuild() {
+    if (reloadingForBuild) return; reloadingForBuild = true;
+    try { if (Store.flush) await Store.flush(); } catch (e) {}
+    const go = () => { try { location.reload(); } catch (e) {} };
+    const modalOpen = () => {
+      const mr = document.getElementById('modalRoot'); const ar = document.getElementById('authRoot');
+      return (mr && mr.innerHTML.trim()) || (ar && ar.innerHTML.trim());
+    };
+    try { U.toast('Updating to the latest version…', 'success'); } catch (e) {}
+    // Don't yank a modal/login out from under the user — wait until it's closed.
+    if (!modalOpen()) return setTimeout(go, 1200);
+    const t = setInterval(() => { if (!modalOpen()) { clearInterval(t); go(); } }, 1500);
+    setTimeout(go, 60000); // hard fallback
+  }
+
   let wired = false;
   function startApp() {
     applyRoleUI();
@@ -148,6 +166,8 @@
       wireGlobalSearch();
       window.addEventListener('hashchange', route);
       window.addEventListener('akb-sync', updateSyncBadge);
+      window.addEventListener('akb-newbuild', onNewBuild);
+      if (Store.startVersionWatch) Store.startVersionWatch();
       document.getElementById('hamburger').onclick = () => document.getElementById('sidebar').classList.toggle('open');
       wired = true;
     }
