@@ -209,6 +209,10 @@ tbody tr.clickable{cursor:pointer}
 .login-card p{margin:2px 0 18px}
 .login-card .field{text-align:left}
 .login-card input{width:100%}
+.pw-wrap{position:relative}
+.pw-wrap input{width:100%;padding-right:44px}
+.pw-eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:18px;line-height:1;padding:6px;opacity:.65}
+.pw-eye:hover{opacity:1}
 .login-err{color:var(--red);font-size:13px;min-height:18px;margin-bottom:8px;text-align:left}
 .login-hint{margin-top:16px;font-size:11px;line-height:1.6}
 .login-hint code{background:#f1f5f9;padding:1px 5px;border-radius:4px}

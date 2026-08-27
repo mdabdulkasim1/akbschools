@@ -210,6 +210,10 @@ tbody tr.clickable{cursor:pointer}
 .login-card p{margin:2px 0 18px}
 .login-card .field{text-align:left}
 .login-card input{width:100%}
+.pw-wrap{position:relative}
+.pw-wrap input{width:100%;padding-right:44px}
+.pw-eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:18px;line-height:1;padding:6px;opacity:.65}
+.pw-eye:hover{opacity:1}
 .login-err{color:var(--red);font-size:13px;min-height:18px;margin-bottom:8px;text-align:left}
 .login-hint{margin-top:16px;font-size:11px;line-height:1.6}
 .login-hint code{background:#f1f5f9;padding:1px 5px;border-radius:4px}
@@ -1818,7 +1822,12 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
           <h1>AKB School of Excellence</h1>
           <p class="muted">Fee Collection · Sign in to continue</p>
           <div class="field"><label>Username</label><input id="lgUser" autofocus autocomplete="username" placeholder="admin / account1 / account2"/></div>
-          <div class="field"><label>Password</label><input id="lgPass" type="password" autocomplete="current-password" placeholder="••••••••"/></div>
+          <div class="field"><label>Password</label>
+            <div class="pw-wrap">
+              <input id="lgPass" type="password" autocomplete="current-password" placeholder="••••••••"/>
+              <button type="button" class="pw-eye" id="lgEye" aria-label="Show password" title="Show password">👁</button>
+            </div>
+          </div>
           <div id="lgErr" class="login-err"></div>
           <button class="btn primary" style="width:100%;justify-content:center" id="lgBtn" type="submit">Sign in</button>
           <div class="login-hint muted" id="lgHint"></div>
@@ -1830,6 +1839,18 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
         'First‑time defaults — change them after signing in:<br>' +
         '<code>admin / admin@123</code> · <code>account1 / account1@123</code> · <code>account2 / account2@123</code>';
     }
+
+    // show/hide password so staff can check for typos
+    const eye = document.getElementById('lgEye');
+    if (eye) eye.onclick = () => {
+      const pw = document.getElementById('lgPass');
+      const show = pw.type === 'password';
+      pw.type = show ? 'text' : 'password';
+      eye.textContent = show ? '🙈' : '👁';
+      eye.title = show ? 'Hide password' : 'Show password';
+      eye.setAttribute('aria-label', eye.title);
+      pw.focus();
+    };
 
     const form = document.getElementById('loginForm');
     const err = document.getElementById('lgErr');

@@ -12,7 +12,12 @@
           <h1>AKB School of Excellence</h1>
           <p class="muted">Fee Collection · Sign in to continue</p>
           <div class="field"><label>Username</label><input id="lgUser" autofocus autocomplete="username" placeholder="admin / account1 / account2"/></div>
-          <div class="field"><label>Password</label><input id="lgPass" type="password" autocomplete="current-password" placeholder="••••••••"/></div>
+          <div class="field"><label>Password</label>
+            <div class="pw-wrap">
+              <input id="lgPass" type="password" autocomplete="current-password" placeholder="••••••••"/>
+              <button type="button" class="pw-eye" id="lgEye" aria-label="Show password" title="Show password">👁</button>
+            </div>
+          </div>
           <div id="lgErr" class="login-err"></div>
           <button class="btn primary" style="width:100%;justify-content:center" id="lgBtn" type="submit">Sign in</button>
           <div class="login-hint muted" id="lgHint"></div>
@@ -24,6 +29,18 @@
         'First‑time defaults — change them after signing in:<br>' +
         '<code>admin / admin@123</code> · <code>account1 / account1@123</code> · <code>account2 / account2@123</code>';
     }
+
+    // show/hide password so staff can check for typos
+    const eye = document.getElementById('lgEye');
+    if (eye) eye.onclick = () => {
+      const pw = document.getElementById('lgPass');
+      const show = pw.type === 'password';
+      pw.type = show ? 'text' : 'password';
+      eye.textContent = show ? '🙈' : '👁';
+      eye.title = show ? 'Hide password' : 'Show password';
+      eye.setAttribute('aria-label', eye.title);
+      pw.focus();
+    };
 
     const form = document.getElementById('loginForm');
     const err = document.getElementById('lgErr');

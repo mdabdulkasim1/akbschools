@@ -87,23 +87,38 @@ function makeCred(password) {
   const hash = crypto.pbkdf2Sync(String(password), Buffer.from(salt, 'hex'), 100000, 32, 'sha256').toString('hex');
   return { salt, hash };
 }
+function verifyCred(password, u) {
+  try {
+    const crypto = require('crypto');
+    return !!u && crypto.pbkdf2Sync(String(password), Buffer.from(String(u.salt), 'hex'), 100000, 32, 'sha256').toString('hex') === u.hash;
+  } catch (e) { return false; }
+}
 function ensureProvisionedUsers() {
   const st = DB.state || (DB.state = { students: [], payments: [], users: [], meta: {} });
   st.users = st.users || [];
-  const has = (name) => st.users.some(u => String(u.username).toLowerCase() === name);
+  const allGrades = () => Array.from(new Set((st.students || []).map(s => s && s.grade).filter(Boolean)));
+  const PAGES = ['dashboard', 'students', 'attendance', 'attreport', 'marks', 'reports'];
   let changed = false;
-  if (!has('teacher')) {
-    const grades = Array.from(new Set((st.students || []).map(s => s && s.grade).filter(Boolean)));
+
+  let t = st.users.find(u => String(u.username).toLowerCase() === 'teacher');
+  if (!t) {
     const cred = makeCred('teacher@123');
-    st.users.push({
-      username: 'teacher', name: 'Teacher', role: 'teacher',
-      salt: cred.salt, hash: cred.hash, mustChange: false,
-      grades: grades,
-      pages: ['dashboard', 'students', 'attendance', 'attreport', 'marks', 'reports'],
-      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
-    });
+    t = { username: 'teacher', name: 'Teacher', role: 'teacher', salt: cred.salt, hash: cred.hash, mustChange: false, grades: allGrades(), pages: PAGES.slice(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    st.users.push(t); changed = true;
+    console.log('Provisioned "teacher" login (teacher / teacher@123) with ' + t.grades.length + ' classes.');
+  } else if (!verifyCred('teacher@123', t)) {
+    // account exists but its password is NOT teacher@123 → re-provision it so the
+    // documented login is guaranteed to work (also refresh classes + access).
+    const cred = makeCred('teacher@123');
+    t.salt = cred.salt; t.hash = cred.hash; t.role = 'teacher'; t.mustChange = false;
+    t.grades = allGrades(); t.pages = PAGES.slice(); t.updatedAt = new Date().toISOString();
     changed = true;
-    console.log('Provisioned "teacher" login (teacher / teacher@123) with ' + grades.length + ' classes.');
+    console.log('Reset "teacher" login to default password with ' + t.grades.length + ' classes.');
+  } else {
+    // password is already correct — just make sure classes/access aren't empty.
+    if (!Array.isArray(t.grades) || !t.grades.length) { t.grades = allGrades(); changed = true; }
+    if (!Array.isArray(t.pages) || !t.pages.length) { t.pages = PAGES.slice(); changed = true; }
+    if (changed) t.updatedAt = new Date().toISOString();
   }
   if (changed) { DB.version++; saveDB(); }
 }
