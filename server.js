@@ -74,6 +74,41 @@ function saveDB() {
 }
 loadDB();
 
+/* ---------------- server-side account provisioning ----------------
+ * The user list is normally managed in the browser, but sync hiccups have made
+ * added logins vanish. To guarantee a usable teacher login exists on the shared
+ * server, (re)create a "teacher" account here on boot if it is missing — with a
+ * password hash the client accepts (same PBKDF2-SHA256), all classrooms, and
+ * access to Dashboard, Students, Attendance, Attendance Report, Report Cards &
+ * Reports. It is only created when absent, so admin edits to it are preserved. */
+function makeCred(password) {
+  const crypto = require('crypto');
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.pbkdf2Sync(String(password), Buffer.from(salt, 'hex'), 100000, 32, 'sha256').toString('hex');
+  return { salt, hash };
+}
+function ensureProvisionedUsers() {
+  const st = DB.state || (DB.state = { students: [], payments: [], users: [], meta: {} });
+  st.users = st.users || [];
+  const has = (name) => st.users.some(u => String(u.username).toLowerCase() === name);
+  let changed = false;
+  if (!has('teacher')) {
+    const grades = Array.from(new Set((st.students || []).map(s => s && s.grade).filter(Boolean)));
+    const cred = makeCred('teacher@123');
+    st.users.push({
+      username: 'teacher', name: 'Teacher', role: 'teacher',
+      salt: cred.salt, hash: cred.hash, mustChange: false,
+      grades: grades,
+      pages: ['dashboard', 'students', 'attendance', 'attreport', 'marks', 'reports'],
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+    });
+    changed = true;
+    console.log('Provisioned "teacher" login (teacher / teacher@123) with ' + grades.length + ' classes.');
+  }
+  if (changed) { DB.version++; saveDB(); }
+}
+ensureProvisionedUsers();
+
 /* ---------------- helpers ---------------- */
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8',
