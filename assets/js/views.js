@@ -1601,7 +1601,7 @@
     $('#gSave', root).onclick = async () => {
       const grades = $$('#gGrades input:checked', root).map(c => c.value);
       await Store.setUserGrades(username, grades);
-      close(); U.toast('Classes assigned', 'success'); users();
+      close(); afterUserWrite('Classes assigned'); users();
     };
   }
 

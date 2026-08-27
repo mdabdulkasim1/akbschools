@@ -388,11 +388,19 @@
       const srvUsers = st.users || [];
       const srvPayments = st.payments || [];
       const lc = v => String(v == null ? '' : v).toLowerCase();
-      // Users: keep every server user; this device's record wins on a username
-      // collision (preserves a just-set password); keep users created only here.
+      // Users: keep every server user; on a username collision keep whichever
+      // copy was edited MOST RECENTLY (by updatedAt) — so a fresh change here
+      // wins, but a stale copy on this device does NOT clobber a change made on
+      // another device (e.g. an admin assigning a teacher's classes). Users that
+      // exist only on this device (just created) are always kept.
       const localByName = new Map(this.users.map(u => [lc(u.username), u]));
       const srvNames = new Set(srvUsers.map(u => lc(u.username)));
-      const mergedUsers = srvUsers.map(su => localByName.get(lc(su.username)) || su);
+      const stamp = u => String((u && (u.updatedAt || u.createdAt)) || '');
+      const mergedUsers = srvUsers.map(su => {
+        const lu = localByName.get(lc(su.username));
+        if (!lu) return su;
+        return stamp(lu) >= stamp(su) ? lu : su; // newer edit wins (tie → local)
+      });
       this.users.forEach(u => { if (!srvNames.has(lc(u.username))) mergedUsers.push(u); });
       // Payments: union by id — never drop a receipt recorded on this device.
       const payById = new Map(srvPayments.map(p => [p.id, p]));
@@ -1039,6 +1047,7 @@
       u.salt = randSalt();
       u.hash = await pbkdf(password, u.salt);
       u.mustChange = false;
+      u.updatedAt = new Date().toISOString();
       await this.persistUsers();
     },
     async addUser({ username, role, name, password, grades, pages }) {
@@ -1049,7 +1058,7 @@
       const salt = randSalt();
       const u = {
         username, role: normRole(role), name: name || username,
-        salt, hash: await pbkdf(password, salt), mustChange: false, createdAt: new Date().toISOString()
+        salt, hash: await pbkdf(password, salt), mustChange: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
       };
       if (u.role === 'teacher') u.grades = Array.isArray(grades) ? grades.slice() : [];
       // Store an explicit page list when given (unless admin, who always has all).
@@ -1064,17 +1073,20 @@
       else delete u.grades;
       // Admin implies full access; drop any custom page list.
       if (u.role === 'admin') delete u.pages;
+      u.updatedAt = new Date().toISOString();
       await this.persistUsers();
     },
     async setUserGrades(username, grades) {
       const u = this.getUser(username); if (!u) return;
       u.grades = Array.isArray(grades) ? grades.slice() : [];
+      u.updatedAt = new Date().toISOString();
       await this.persistUsers();
     },
     async setUserPages(username, pages) {
       const u = this.getUser(username); if (!u) return;
       if (u.role === 'admin') { delete u.pages; }
       else u.pages = Array.isArray(pages) ? pages.filter(k => PAGE_KEYS.indexOf(k) >= 0) : [];
+      u.updatedAt = new Date().toISOString();
       await this.persistUsers();
     },
     // Effective page keys for a username (or the current user when omitted).
