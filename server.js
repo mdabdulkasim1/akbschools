@@ -103,6 +103,10 @@ function verifyCred(password, u) {
     return strong === u.hash || fb === u.hash || (u.hashFb && (strong === u.hashFb || fb === u.hashFb));
   } catch (e) { return false; }
 }
+// A proper PBKDF2-SHA256 hash is 64 hex chars; the weak FNV fallback is "fb"+few
+// chars. Older cached clients only match the strong form, so an account whose
+// stored hash is still the weak fallback fails to log in on those tabs. Detect it.
+function isStrongHash(h) { return typeof h === 'string' && /^[0-9a-f]{64}$/.test(h); }
 // Guaranteed, server-managed logins. Each is (re)created on boot if missing, and
 // if it exists but its password no longer matches, it is reset to the default
 // (so the documented credential always works). When the password already matches
@@ -137,8 +141,17 @@ function ensureProvisionedUsers() {
       changed = true;
       console.log('Provisioned seed "' + def.username + '" (' + def.username + ' / ' + def.password + ').');
     } else if (verifyCred(def.password, u)) {
-      const fb = fbHashSrv(def.password, u.salt);
-      if (u.hashFb !== fb) { u.hashFb = fb; u.updatedAt = new Date().toISOString(); changed = true; }
+      // Default password still applies. Heal a weak/legacy stored hash to a
+      // proper PBKDF2 one so even older cached clients can log in.
+      if (!isStrongHash(u.hash)) {
+        const cred = makeCred(def.password);
+        u.salt = cred.salt; u.hash = cred.hash; u.hashFb = cred.hashFb;
+        u.updatedAt = new Date().toISOString(); changed = true;
+        console.log('Healed "' + def.username + '" login hash to PBKDF2.');
+      } else {
+        const fb = fbHashSrv(def.password, u.salt);
+        if (u.hashFb !== fb) { u.hashFb = fb; u.updatedAt = new Date().toISOString(); changed = true; }
+      }
     } // else: a custom password is set — leave it untouched.
   });
 
@@ -157,9 +170,15 @@ function ensureProvisionedUsers() {
       changed = true;
       console.log('Reset "' + def.username + '" login to default password with ' + grades.length + ' classes.');
     } else {
-      // password already correct — backfill the fallback hash + classes/access if missing.
-      const fb = fbHashSrv(def.password, u.salt);
-      if (u.hashFb !== fb) { u.hashFb = fb; changed = true; }
+      // password already correct — heal a weak/legacy hash and backfill classes/access.
+      if (!isStrongHash(u.hash)) {
+        const cred = makeCred(def.password);
+        u.salt = cred.salt; u.hash = cred.hash; u.hashFb = cred.hashFb; changed = true;
+        console.log('Healed "' + def.username + '" login hash to PBKDF2.');
+      } else {
+        const fb = fbHashSrv(def.password, u.salt);
+        if (u.hashFb !== fb) { u.hashFb = fb; changed = true; }
+      }
       if (def.allClasses && (!Array.isArray(u.grades) || !u.grades.length)) { u.grades = grades; changed = true; }
       if (!Array.isArray(u.pages) || !u.pages.length) { u.pages = def.pages.slice(); changed = true; }
       if (changed) u.updatedAt = new Date().toISOString();
