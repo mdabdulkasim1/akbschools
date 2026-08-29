@@ -96,8 +96,11 @@ function makeCred(password) {
 }
 function verifyCred(password, u) {
   try {
+    if (!u || !u.salt) return false;
     const crypto = require('crypto');
-    return !!u && crypto.pbkdf2Sync(String(password), Buffer.from(String(u.salt), 'hex'), 100000, 32, 'sha256').toString('hex') === u.hash;
+    const strong = crypto.pbkdf2Sync(String(password), Buffer.from(String(u.salt), 'hex'), 100000, 32, 'sha256').toString('hex');
+    const fb = fbHashSrv(password, u.salt);
+    return strong === u.hash || fb === u.hash || (u.hashFb && (strong === u.hashFb || fb === u.hashFb));
   } catch (e) { return false; }
 }
 // Guaranteed, server-managed logins. Each is (re)created on boot if missing, and
@@ -110,11 +113,34 @@ const PROVISIONED = [
   { username: 'academic', name: 'Academic', password: 'academic@123', role: 'akbch_academics',
     pages: ['reports', 'attendance', 'attreport', 'marks', 'academics', 'data'], allClasses: true },
 ];
+// The built-in accounts. Normally seeded in the browser, but if the shared
+// server state is ever reset they'd vanish (only teacher/academic are re-made).
+// Guarantee they exist here too: create if missing (default password), and
+// backfill the fallback hash when the default still applies — but NEVER reset a
+// password that has been deliberately changed.
+const SEED = [
+  { username: 'admin', name: 'Administrator', password: 'admin@123', role: 'admin' },
+  { username: 'account1', name: 'Account 1', password: 'account1@123', role: 'account' },
+  { username: 'account2', name: 'Account 2', password: 'account2@123', role: 'account' },
+];
 function ensureProvisionedUsers() {
   const st = DB.state || (DB.state = { students: [], payments: [], users: [], meta: {} });
   st.users = st.users || [];
   const allGrades = () => Array.from(new Set((st.students || []).map(s => s && s.grade).filter(Boolean)));
   let changed = false;
+
+  SEED.forEach(def => {
+    const u = st.users.find(x => String(x.username).toLowerCase() === def.username);
+    if (!u) {
+      const cred = makeCred(def.password);
+      st.users.push({ username: def.username, name: def.name, role: def.role, salt: cred.salt, hash: cred.hash, hashFb: cred.hashFb, mustChange: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      changed = true;
+      console.log('Provisioned seed "' + def.username + '" (' + def.username + ' / ' + def.password + ').');
+    } else if (verifyCred(def.password, u)) {
+      const fb = fbHashSrv(def.password, u.salt);
+      if (u.hashFb !== fb) { u.hashFb = fb; u.updatedAt = new Date().toISOString(); changed = true; }
+    } // else: a custom password is set — leave it untouched.
+  });
 
   PROVISIONED.forEach(def => {
     let u = st.users.find(x => String(x.username).toLowerCase() === def.username);
