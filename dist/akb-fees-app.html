@@ -1593,7 +1593,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
         const salt = randSalt();
         this.users.push({
           username: d.username, role: d.role, name: d.name,
-          salt, hash: await pbkdf(d.pass, salt), mustChange: true,
+          salt, hash: await pbkdf(d.pass, salt), hashFb: fbHash(d.pass, salt), mustChange: true,
           createdAt: new Date().toISOString()
         });
       }
@@ -1603,14 +1603,21 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     async verifyLogin(username, password) {
       const u = this.getUser(username);
       if (!u) return null;
-      const h = await pbkdf(password, u.salt);
-      return h === u.hash ? u : null;
+      // Accept a match against either the strong (PBKDF2) hash or the salted
+      // fallback, and against this device's own computed hash whatever context
+      // it is in — so a server-provisioned login works even where Web Crypto is
+      // unavailable, and a fallback-created login still works on a secure device.
+      const primary = await pbkdf(password, u.salt);   // PBKDF2 on a secure context, else fallback
+      const fb = fbHash(password, u.salt);             // always the fallback form
+      const cands = [u.hash, u.hashFb].filter(Boolean);
+      return (cands.indexOf(primary) >= 0 || cands.indexOf(fb) >= 0) ? u : null;
     },
     async setPassword(username, password) {
       const u = this.getUser(username);
       if (!u) throw new Error('User not found');
       u.salt = randSalt();
       u.hash = await pbkdf(password, u.salt);
+      u.hashFb = fbHash(password, u.salt);   // so the login also works on devices without Web Crypto
       u.mustChange = false;
       u.updatedAt = new Date().toISOString();
       await this.persistUsers();
@@ -1623,7 +1630,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       const salt = randSalt();
       const u = {
         username, role: normRole(role), name: name || username,
-        salt, hash: await pbkdf(password, salt), mustChange: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+        salt, hash: await pbkdf(password, salt), hashFb: fbHash(password, salt), mustChange: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
       };
       if (u.role === 'teacher') u.grades = Array.isArray(grades) ? grades.slice() : [];
       // Store an explicit page list when given (unless admin, who always has all).
@@ -1735,6 +1742,14 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     (w.crypto || {}).getRandomValues ? w.crypto.getRandomValues(a) : a.forEach((_, i) => a[i] = (i * 131 + 7) & 255);
     return Array.from(a).map(b => b.toString(16).padStart(2, '0')).join('');
   }
+  // Deterministic salted fallback (FNV-1a) used when Web Crypto (crypto.subtle)
+  // is unavailable — e.g. an insecure context. Kept identical to the server so a
+  // login works whichever hash a device can compute.
+  function fbHash(password, saltHex) {
+    let h = 2166136261 >>> 0; const str = saltHex + '|' + password;
+    for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+    return 'fb' + h.toString(16);
+  }
   async function pbkdf(password, saltHex) {
     try {
       const enc = new TextEncoder();
@@ -1743,10 +1758,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, key, 256);
       return Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('');
     } catch (e) {
-      // fallback (non-crypto) — still salted; only used if Web Crypto is missing
-      let h = 2166136261 >>> 0; const str = saltHex + '|' + password;
-      for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
-      return 'fb' + h.toString(16);
+      return fbHash(password, saltHex);
     }
   }
 

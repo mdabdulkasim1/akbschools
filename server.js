@@ -81,11 +81,18 @@ loadDB();
  * password hash the client accepts (same PBKDF2-SHA256), all classrooms, and
  * access to Dashboard, Students, Attendance, Attendance Report, Report Cards &
  * Reports. It is only created when absent, so admin edits to it are preserved. */
+function fbHashSrv(password, saltHex) {
+  // Mirror of the client's non-WebCrypto fallback (FNV-1a) so a device without
+  // crypto.subtle can still log in to a server-provisioned account.
+  let h = 2166136261 >>> 0; const str = saltHex + '|' + String(password);
+  for (let i = 0; i < str.length; i++) { h = (h ^ str.charCodeAt(i)) >>> 0; h = Math.imul(h, 16777619) >>> 0; }
+  return 'fb' + h.toString(16);
+}
 function makeCred(password) {
   const crypto = require('crypto');
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = crypto.pbkdf2Sync(String(password), Buffer.from(salt, 'hex'), 100000, 32, 'sha256').toString('hex');
-  return { salt, hash };
+  return { salt, hash, hashFb: fbHashSrv(password, salt) };
 }
 function verifyCred(password, u) {
   try {
@@ -114,16 +121,19 @@ function ensureProvisionedUsers() {
     const grades = def.allClasses ? allGrades() : [];
     if (!u) {
       const cred = makeCred(def.password);
-      u = { username: def.username, name: def.name, role: def.role, salt: cred.salt, hash: cred.hash, mustChange: false, grades: grades, pages: def.pages.slice(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      u = { username: def.username, name: def.name, role: def.role, salt: cred.salt, hash: cred.hash, hashFb: cred.hashFb, mustChange: false, grades: grades, pages: def.pages.slice(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
       st.users.push(u); changed = true;
       console.log('Provisioned "' + def.username + '" login (' + def.username + ' / ' + def.password + ') with ' + grades.length + ' classes.');
     } else if (!verifyCred(def.password, u)) {
       const cred = makeCred(def.password);
-      u.salt = cred.salt; u.hash = cred.hash; u.role = def.role; u.mustChange = false;
+      u.salt = cred.salt; u.hash = cred.hash; u.hashFb = cred.hashFb; u.role = def.role; u.mustChange = false;
       u.grades = grades; u.pages = def.pages.slice(); u.updatedAt = new Date().toISOString();
       changed = true;
       console.log('Reset "' + def.username + '" login to default password with ' + grades.length + ' classes.');
     } else {
+      // password already correct — backfill the fallback hash + classes/access if missing.
+      const fb = fbHashSrv(def.password, u.salt);
+      if (u.hashFb !== fb) { u.hashFb = fb; changed = true; }
       if (def.allClasses && (!Array.isArray(u.grades) || !u.grades.length)) { u.grades = grades; changed = true; }
       if (!Array.isArray(u.pages) || !u.pages.length) { u.pages = def.pages.slice(); changed = true; }
       if (changed) u.updatedAt = new Date().toISOString();
