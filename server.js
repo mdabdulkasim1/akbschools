@@ -93,33 +93,43 @@ function verifyCred(password, u) {
     return !!u && crypto.pbkdf2Sync(String(password), Buffer.from(String(u.salt), 'hex'), 100000, 32, 'sha256').toString('hex') === u.hash;
   } catch (e) { return false; }
 }
+// Guaranteed, server-managed logins. Each is (re)created on boot if missing, and
+// if it exists but its password no longer matches, it is reset to the default
+// (so the documented credential always works). When the password already matches
+// we only backfill classes/access if they are empty, leaving admin edits alone.
+const PROVISIONED = [
+  { username: 'teacher', name: 'Teacher', password: 'teacher@123', role: 'teacher',
+    pages: ['dashboard', 'students', 'attendance', 'attreport', 'marks', 'reports'], allClasses: true },
+  { username: 'academic', name: 'Academic', password: 'academic@123', role: 'akbch_academics',
+    pages: ['reports', 'attendance', 'attreport', 'marks', 'academics', 'data'], allClasses: true },
+];
 function ensureProvisionedUsers() {
   const st = DB.state || (DB.state = { students: [], payments: [], users: [], meta: {} });
   st.users = st.users || [];
   const allGrades = () => Array.from(new Set((st.students || []).map(s => s && s.grade).filter(Boolean)));
-  const PAGES = ['dashboard', 'students', 'attendance', 'attreport', 'marks', 'reports'];
   let changed = false;
 
-  let t = st.users.find(u => String(u.username).toLowerCase() === 'teacher');
-  if (!t) {
-    const cred = makeCred('teacher@123');
-    t = { username: 'teacher', name: 'Teacher', role: 'teacher', salt: cred.salt, hash: cred.hash, mustChange: false, grades: allGrades(), pages: PAGES.slice(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-    st.users.push(t); changed = true;
-    console.log('Provisioned "teacher" login (teacher / teacher@123) with ' + t.grades.length + ' classes.');
-  } else if (!verifyCred('teacher@123', t)) {
-    // account exists but its password is NOT teacher@123 → re-provision it so the
-    // documented login is guaranteed to work (also refresh classes + access).
-    const cred = makeCred('teacher@123');
-    t.salt = cred.salt; t.hash = cred.hash; t.role = 'teacher'; t.mustChange = false;
-    t.grades = allGrades(); t.pages = PAGES.slice(); t.updatedAt = new Date().toISOString();
-    changed = true;
-    console.log('Reset "teacher" login to default password with ' + t.grades.length + ' classes.');
-  } else {
-    // password is already correct — just make sure classes/access aren't empty.
-    if (!Array.isArray(t.grades) || !t.grades.length) { t.grades = allGrades(); changed = true; }
-    if (!Array.isArray(t.pages) || !t.pages.length) { t.pages = PAGES.slice(); changed = true; }
-    if (changed) t.updatedAt = new Date().toISOString();
-  }
+  PROVISIONED.forEach(def => {
+    let u = st.users.find(x => String(x.username).toLowerCase() === def.username);
+    const grades = def.allClasses ? allGrades() : [];
+    if (!u) {
+      const cred = makeCred(def.password);
+      u = { username: def.username, name: def.name, role: def.role, salt: cred.salt, hash: cred.hash, mustChange: false, grades: grades, pages: def.pages.slice(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      st.users.push(u); changed = true;
+      console.log('Provisioned "' + def.username + '" login (' + def.username + ' / ' + def.password + ') with ' + grades.length + ' classes.');
+    } else if (!verifyCred(def.password, u)) {
+      const cred = makeCred(def.password);
+      u.salt = cred.salt; u.hash = cred.hash; u.role = def.role; u.mustChange = false;
+      u.grades = grades; u.pages = def.pages.slice(); u.updatedAt = new Date().toISOString();
+      changed = true;
+      console.log('Reset "' + def.username + '" login to default password with ' + grades.length + ' classes.');
+    } else {
+      if (def.allClasses && (!Array.isArray(u.grades) || !u.grades.length)) { u.grades = grades; changed = true; }
+      if (!Array.isArray(u.pages) || !u.pages.length) { u.pages = def.pages.slice(); changed = true; }
+      if (changed) u.updatedAt = new Date().toISOString();
+    }
+  });
+
   if (changed) { DB.version++; saveDB(); }
 }
 ensureProvisionedUsers();
