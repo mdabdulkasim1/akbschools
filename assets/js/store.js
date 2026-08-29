@@ -1203,13 +1203,49 @@
     (w.crypto || {}).getRandomValues ? w.crypto.getRandomValues(a) : a.forEach((_, i) => a[i] = (i * 131 + 7) & 255);
     return Array.from(a).map(b => b.toString(16).padStart(2, '0')).join('');
   }
-  // Deterministic salted fallback (FNV-1a) used when Web Crypto (crypto.subtle)
-  // is unavailable — e.g. an insecure context. Kept identical to the server so a
-  // login works whichever hash a device can compute.
+  // Deterministic salted fallback (FNV-1a) — last resort, kept only so any hash
+  // already stored in this form still verifies.
   function fbHash(password, saltHex) {
     let h = 2166136261 >>> 0; const str = saltHex + '|' + password;
     for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
     return 'fb' + h.toString(16);
+  }
+  /* Pure-JS PBKDF2-HMAC-SHA256 (dkLen 32) — byte-identical to Web Crypto / Node,
+     used when crypto.subtle is unavailable (insecure context) so EVERY account,
+     including ones hashed on another device, logs in anywhere. */
+  const _SHK = [0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2];
+  function _sha256(bytes) {
+    let h0 = 0x6a09e667, h1 = 0xbb67ae85, h2 = 0x3c6ef372, h3 = 0xa54ff53a, h4 = 0x510e527f, h5 = 0x9b05688c, h6 = 0x1f83d9ab, h7 = 0x5be0cd19;
+    const l = bytes.length, bitLen = l * 8, withOne = l + 1, total = withOne + 8, pad = (64 - (total % 64)) % 64, msg = new Uint8Array(withOne + pad + 8);
+    msg.set(bytes); msg[l] = 0x80;
+    const dv = msg.length, hi = Math.floor(bitLen / 0x100000000), lo = bitLen >>> 0;
+    msg[dv - 8] = (hi >>> 24) & 255; msg[dv - 7] = (hi >>> 16) & 255; msg[dv - 6] = (hi >>> 8) & 255; msg[dv - 5] = hi & 255;
+    msg[dv - 4] = (lo >>> 24) & 255; msg[dv - 3] = (lo >>> 16) & 255; msg[dv - 2] = (lo >>> 8) & 255; msg[dv - 1] = lo & 255;
+    const wv = new Uint32Array(64);
+    for (let off = 0; off < msg.length; off += 64) {
+      for (let i = 0; i < 16; i++) wv[i] = (msg[off + i * 4] << 24) | (msg[off + i * 4 + 1] << 16) | (msg[off + i * 4 + 2] << 8) | (msg[off + i * 4 + 3]);
+      for (let i = 16; i < 64; i++) { const s0 = ((wv[i - 15] >>> 7) | (wv[i - 15] << 25)) ^ ((wv[i - 15] >>> 18) | (wv[i - 15] << 14)) ^ (wv[i - 15] >>> 3); const s1 = ((wv[i - 2] >>> 17) | (wv[i - 2] << 15)) ^ ((wv[i - 2] >>> 19) | (wv[i - 2] << 13)) ^ (wv[i - 2] >>> 10); wv[i] = (wv[i - 16] + s0 + wv[i - 7] + s1) | 0; }
+      let a = h0, b = h1, c = h2, d = h3, e = h4, f = h5, g = h6, hh = h7;
+      for (let i = 0; i < 64; i++) { const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7)); const ch = (e & f) ^ ((~e) & g); const t1 = (hh + S1 + ch + _SHK[i] + wv[i]) | 0; const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10)); const maj = (a & b) ^ (a & c) ^ (b & c); const t2 = (S0 + maj) | 0; hh = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0; }
+      h0 = (h0 + a) | 0; h1 = (h1 + b) | 0; h2 = (h2 + c) | 0; h3 = (h3 + d) | 0; h4 = (h4 + e) | 0; h5 = (h5 + f) | 0; h6 = (h6 + g) | 0; h7 = (h7 + hh) | 0;
+    }
+    const out = new Uint8Array(32), hs = [h0, h1, h2, h3, h4, h5, h6, h7];
+    for (let i = 0; i < 8; i++) { out[i * 4] = (hs[i] >>> 24) & 255; out[i * 4 + 1] = (hs[i] >>> 16) & 255; out[i * 4 + 2] = (hs[i] >>> 8) & 255; out[i * 4 + 3] = hs[i] & 255; }
+    return out;
+  }
+  function _concat(a, b) { const c = new Uint8Array(a.length + b.length); c.set(a); c.set(b, a.length); return c; }
+  function _hmac256(key, msg) {
+    if (key.length > 64) key = _sha256(key);
+    const k = new Uint8Array(64); k.set(key); const ip = new Uint8Array(64), op = new Uint8Array(64);
+    for (let i = 0; i < 64; i++) { ip[i] = k[i] ^ 0x36; op[i] = k[i] ^ 0x5c; }
+    return _sha256(_concat(op, _sha256(_concat(ip, msg))));
+  }
+  function pbkdfJS(password, saltHex) {
+    const pw = new TextEncoder().encode(password);
+    const salt = Uint8Array.from(saltHex.match(/.{2}/g).map(h => parseInt(h, 16)));
+    let u = _hmac256(pw, _concat(salt, new Uint8Array([0, 0, 0, 1]))); const t = u.slice();
+    for (let i = 1; i < 100000; i++) { u = _hmac256(pw, u); for (let j = 0; j < 32; j++) t[j] ^= u[j]; }
+    return Array.from(t).map(b => b.toString(16).padStart(2, '0')).join('');
   }
   async function pbkdf(password, saltHex) {
     try {
@@ -1219,7 +1255,9 @@
       const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, key, 256);
       return Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('');
     } catch (e) {
-      return fbHash(password, saltHex);
+      // No Web Crypto (insecure context): compute the SAME PBKDF2 hash in pure JS
+      // so every account still logs in. FNV is only a last resort if even that fails.
+      try { return pbkdfJS(password, saltHex); } catch (e2) { return fbHash(password, saltHex); }
     }
   }
 
