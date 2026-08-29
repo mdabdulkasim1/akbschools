@@ -137,7 +137,7 @@ function ensureProvisionedUsers() {
     const u = st.users.find(x => String(x.username).toLowerCase() === def.username);
     if (!u) {
       const cred = makeCred(def.password);
-      st.users.push({ username: def.username, name: def.name, role: def.role, salt: cred.salt, hash: cred.hash, hashFb: cred.hashFb, mustChange: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      st.users.push({ username: def.username, name: def.name, role: def.role, salt: cred.salt, hash: cred.hash, hashFb: cred.hashFb, mustChange: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
       changed = true;
       console.log('Provisioned seed "' + def.username + '" (' + def.username + ' / ' + def.password + ').');
     } else if (verifyCred(def.password, u)) {
@@ -152,7 +152,17 @@ function ensureProvisionedUsers() {
         const fb = fbHashSrv(def.password, u.salt);
         if (u.hashFb !== fb) { u.hashFb = fb; u.updatedAt = new Date().toISOString(); changed = true; }
       }
-    } // else: a custom password is set — leave it untouched.
+    } else if (!u.pwCustom) {
+      // The stored credential can't verify the default AND the password was
+      // never deliberately changed in the app (no pwCustom flag). This is the
+      // corrupted / legacy-incompatible case that locks admin out — reset it to
+      // the documented default so the login always works.
+      const cred = makeCred(def.password);
+      u.salt = cred.salt; u.hash = cred.hash; u.hashFb = cred.hashFb;
+      u.role = def.role; u.mustChange = false; u.updatedAt = new Date().toISOString();
+      changed = true;
+      console.log('Reset seed "' + def.username + '" to default password (' + def.username + ' / ' + def.password + ').');
+    } // else: a password was deliberately changed in-app (pwCustom) — leave it untouched.
   });
 
   PROVISIONED.forEach(def => {

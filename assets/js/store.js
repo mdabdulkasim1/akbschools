@@ -1080,6 +1080,7 @@
       u.hash = await pbkdf(password, u.salt);
       u.hashFb = fbHash(password, u.salt);   // so the login also works on devices without Web Crypto
       u.mustChange = false;
+      u.pwCustom = true;   // deliberately changed — the server must not reset it to a default
       u.updatedAt = new Date().toISOString();
       await this.persistUsers();
     },
