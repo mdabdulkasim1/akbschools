@@ -11,7 +11,8 @@ async function setupDatabase() {
     console.log('--- Database Setup Completed Successfully ---');
   } catch (err) {
     console.error('--- Database Setup Failed ---', err.message);
-    process.exit(1);
+    if (require.main === module) process.exit(1);
+    throw err;
   }
 }
 

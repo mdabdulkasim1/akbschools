@@ -265,9 +265,17 @@ async function saveDBToMySQL(state) {
 }
 
 if (hasMySQL()) {
-  loadDBFromMySQL().then(ok => {
-    if (ok) console.log('Successfully connected and loaded state from MySQL database');
-  });
+  try {
+    const { setupDatabase } = require('./scripts/setup');
+    setupDatabase()
+      .then(() => loadDBFromMySQL())
+      .catch(err => {
+        console.warn('[DB Auto-Setup Warn]', err.message);
+        loadDBFromMySQL();
+      });
+  } catch (e) {
+    loadDBFromMySQL();
+  }
 }
 
 /* ---------------- helpers ---------------- */
@@ -479,10 +487,11 @@ function sendFile(filePath, res, onErr) {
   });
 }
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log('AKB Fee Collection on port ' + PORT +
     (PASS ? ' (auth on)' : ' (NO PASSWORD)') +
     ' · data:' + DATA_DIR +
+    ' · mysql:' + (hasMySQL() ? 'yes' : 'no') +
     ' · excel:' + (ExcelJS ? 'yes' : 'no') +
     ' · email:' + (emailConfigured() ? 'yes -> ' + BACKUP_EMAIL : 'not configured') +
     ' · whatsapp:' + (waConfigured() ? WA.provider : 'no'));
