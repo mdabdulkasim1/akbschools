@@ -234,33 +234,39 @@ async function saveDBToMySQL(state) {
     if (Array.isArray(state.students)) {
       for (const s of state.students) {
         if (!s.id) continue;
-        await p.query(
-          `INSERT INTO students (id, name, grade, class_teacher, gender, father, mother, contact, religion, location, drop_location, transport_type, vehicle, status, discount, admission, sports_activity, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-           ON DUPLICATE KEY UPDATE
-             name=VALUES(name), grade=VALUES(grade), class_teacher=VALUES(class_teacher), gender=VALUES(gender),
-             father=VALUES(father), mother=VALUES(mother), contact=VALUES(contact), religion=VALUES(religion),
-             location=VALUES(location), drop_location=VALUES(drop_location), transport_type=VALUES(transport_type),
-             vehicle=VALUES(vehicle), status=VALUES(status), discount=VALUES(discount), admission=VALUES(admission),
-             sports_activity=VALUES(sports_activity), updated_at=NOW()`,
-          [s.id, s.name || '', s.grade || '', s.classTeacher || null, s.gender || null, s.father || null, s.mother || null, s.contact || null, s.religion || null, s.location || null, s.dropLocation || null, s.transportType || null, s.vehicle || null, s.status || 'active', Number(s.discount) || 0, s.admission || 'NEW', s.sportsActivity || null]
-        );
+        try {
+          await p.query(
+            `INSERT INTO students (id, name, grade, class_teacher, gender, father, mother, contact, religion, location, drop_location, transport_type, vehicle, status, discount, admission, sports_activity, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+             ON DUPLICATE KEY UPDATE
+               name=VALUES(name), grade=VALUES(grade), class_teacher=VALUES(class_teacher), gender=VALUES(gender),
+               father=VALUES(father), mother=VALUES(mother), contact=VALUES(contact), religion=VALUES(religion),
+               location=VALUES(location), drop_location=VALUES(drop_location), transport_type=VALUES(transport_type),
+               vehicle=VALUES(vehicle), status=VALUES(status), discount=VALUES(discount), admission=VALUES(admission),
+               sports_activity=VALUES(sports_activity), updated_at=NOW()`,
+            [s.id, s.name || '', s.grade || '', s.classTeacher || null, s.gender || null, s.father || null, s.mother || null, s.contact || null, s.religion || null, s.location || null, s.dropLocation || null, s.transportType || null, s.vehicle || null, s.status || 'active', Number(s.discount) || 0, s.admission || 'NEW', s.sportsActivity || null]
+          );
 
-        if (s.fees && typeof s.fees === 'object') {
-          for (const headKey of Object.keys(s.fees)) {
-            const f = s.fees[headKey];
-            if (!f) continue;
-            const tot = Number(f.total) || 0;
-            const pd = Number(f.paid) || 0;
-            const bal = Number(f.balance) || (tot - pd);
-            await p.query(
-              `INSERT INTO student_fees (student_id, head_key, total_amount, paid_amount, balance_amount, updated_at)
-               VALUES (?, ?, ?, ?, ?, NOW())
-               ON DUPLICATE KEY UPDATE
-                 total_amount=VALUES(total_amount), paid_amount=VALUES(paid_amount), balance_amount=VALUES(balance_amount), updated_at=NOW()`,
-              [s.id, headKey, tot, pd, bal]
-            );
+          if (s.fees && typeof s.fees === 'object') {
+            for (const headKey of Object.keys(s.fees)) {
+              try {
+                const f = s.fees[headKey];
+                if (!f) continue;
+                const tot = typeof f === 'object' ? (Number(f.total) || 0) : (Number(f) || 0);
+                const pd = typeof f === 'object' ? (Number(f.paid) || 0) : 0;
+                const bal = typeof f === 'object' ? (Number(f.balance) || (tot - pd)) : tot;
+                await p.query(
+                  `INSERT INTO student_fees (student_id, head_key, total_amount, paid_amount, balance_amount, updated_at)
+                   VALUES (?, ?, ?, ?, ?, NOW())
+                   ON DUPLICATE KEY UPDATE
+                     total_amount=VALUES(total_amount), paid_amount=VALUES(paid_amount), balance_amount=VALUES(balance_amount), updated_at=NOW()`,
+                  [s.id, headKey, tot, pd, bal]
+                );
+              } catch (fe) {}
+            }
           }
+        } catch (se) {
+          console.warn('[MySQL Save Student Warn]', s.id, se.message);
         }
       }
     }
@@ -478,8 +484,7 @@ const server = http.createServer(async (req, res) => {
     if (url === '/api/state' && req.method === 'GET') return sendJSON(res, 200, DB);
     if (url === '/api/state' && req.method === 'PUT') {
       const body = JSON.parse(await readBody(req));
-      if (typeof body.baseVersion === 'number' && body.baseVersion !== DB.version) return sendJSON(res, 409, DB);
-      if (body.state) {
+      if (body && body.state) {
         DB.state = body.state;
         DB.version++;
         await saveDB();
@@ -488,6 +493,35 @@ const server = http.createServer(async (req, res) => {
         }
       }
       return sendJSON(res, 200, { version: DB.version });
+    }
+    if (url.startsWith('/api/students') && (req.method === 'PUT' || req.method === 'POST')) {
+      const body = JSON.parse(await readBody(req));
+      const s = body.student || body;
+      if (s && s.id) {
+        if (!Array.isArray(DB.state.students)) DB.state.students = [];
+        const idx = DB.state.students.findIndex(x => x.id === s.id);
+        if (idx >= 0) DB.state.students[idx] = s; else DB.state.students.push(s);
+        DB.version++;
+        await saveDB();
+
+        if (hasMySQL()) {
+          const p = getPool();
+          if (p) {
+            await p.query(
+              `INSERT INTO students (id, name, grade, class_teacher, gender, father, mother, contact, religion, location, drop_location, transport_type, vehicle, status, discount, admission, sports_activity, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+               ON DUPLICATE KEY UPDATE
+                 name=VALUES(name), grade=VALUES(grade), class_teacher=VALUES(class_teacher), gender=VALUES(gender),
+                 father=VALUES(father), mother=VALUES(mother), contact=VALUES(contact), religion=VALUES(religion),
+                 location=VALUES(location), drop_location=VALUES(drop_location), transport_type=VALUES(transport_type),
+                 vehicle=VALUES(vehicle), status=VALUES(status), discount=VALUES(discount), admission=VALUES(admission),
+                 sports_activity=VALUES(sports_activity), updated_at=NOW()`,
+              [s.id, s.name || '', s.grade || '', s.classTeacher || null, s.gender || null, s.father || null, s.mother || null, s.contact || null, s.religion || null, s.location || null, s.dropLocation || null, s.transportType || null, s.vehicle || null, s.status || 'active', Number(s.discount) || 0, s.admission || 'NEW', s.sportsActivity || null]
+            ).catch(err => console.warn('[Direct Student MySQL Update Warn]', err.message));
+          }
+        }
+      }
+      return sendJSON(res, 200, { ok: true, version: DB.version });
     }
     if (url === '/api/backup-status' && req.method === 'GET')
       return sendJSON(res, 200, { serverMode: true, mysql: hasMySQL(), emailConfigured: emailConfigured(), to: BACKUP_EMAIL, day: BACKUP_DAY, hour: BACKUP_HOUR, lastBackupAt: DB.lastBackupAt, excel: !!ExcelJS, dataDir: DATA_DIR, version: DB.version, students: (DB.state.students || []).length, payments: (DB.state.payments || []).length, bootAt: BOOT_AT });

@@ -720,7 +720,17 @@
       this.recompute(s);
       const i = this.students.findIndex(x => x.id === s.id);
       if (i < 0) this.students.push(s);
-      if (serverMode) { await this.persist(); return; }   // sync edits to the shared server
+      if (serverMode) {
+        try {
+          await fetch('/api/students/' + encodeURIComponent(s.id), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(s)
+          });
+        } catch (e) {}
+        await this.persist();
+        return;
+      }
       if (useIDB && db) await idbPut('students', s);
       else LS.setItem('akb_students', JSON.stringify(this.students));
     },
