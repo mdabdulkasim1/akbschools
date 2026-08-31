@@ -602,7 +602,15 @@
         this.recompute(student);
       }
       this.payments.splice(idx, 1);
-      await this.persist();
+      if (serverMode) {
+        try {
+          await fetch('/api/payments/' + encodeURIComponent(rec.receiptNo || rec.id), { method: 'DELETE' });
+        } catch (e) {}
+        await this.persist();
+        return;
+      }
+      if (useIDB && db) await idbDelete('payments', rec.receiptNo || rec.id);
+      else LS.setItem('akb_payments', JSON.stringify(this.payments));
     },
 
     studentPayments(id) {
@@ -734,14 +742,20 @@
       if (useIDB && db) await idbPut('students', s);
       else LS.setItem('akb_students', JSON.stringify(this.students));
     },
-    // Delete a student record. Past receipts are kept (they carry the student's
-    // name/grade) unless withPayments is true.
     async deleteStudent(id, withPayments) {
       const i = this.students.findIndex(s => s.id === id);
       if (i < 0) return;
       this.students.splice(i, 1);
       if (withPayments) this.payments = this.payments.filter(p => p.studentId !== id);
-      await this.persist();
+      if (serverMode) {
+        try {
+          await fetch('/api/students/' + encodeURIComponent(id), { method: 'DELETE' });
+        } catch (e) {}
+        await this.persist();
+        return;
+      }
+      if (useIDB && db) await idbDelete('students', id);
+      else LS.setItem('akb_students', JSON.stringify(this.students));
     },
 
     /* ---- attendance (meta.attendance = { 'YYYY-MM-DD': { studentId: 'P'|'A' } }) ---- */

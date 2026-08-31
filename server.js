@@ -523,6 +523,46 @@ const server = http.createServer(async (req, res) => {
       }
       return sendJSON(res, 200, { ok: true, version: DB.version });
     }
+    if (url.startsWith('/api/students/') && req.method === 'DELETE') {
+      const id = decodeURIComponent(url.slice('/api/students/'.length));
+      if (id) {
+        if (Array.isArray(DB.state.students)) {
+          const idx = DB.state.students.findIndex(x => x.id === id);
+          if (idx >= 0) DB.state.students.splice(idx, 1);
+        }
+        DB.version++;
+        await saveDB();
+
+        if (hasMySQL()) {
+          const p = getPool();
+          if (p) {
+            await p.query('DELETE FROM student_fees WHERE student_id = ?', [id]).catch(() => {});
+            await p.query('DELETE FROM students WHERE id = ?', [id]).catch(err => console.warn('[Direct Student MySQL Delete Warn]', err.message));
+          }
+        }
+      }
+      return sendJSON(res, 200, { ok: true, version: DB.version });
+    }
+    if (url.startsWith('/api/payments/') && req.method === 'DELETE') {
+      const id = decodeURIComponent(url.slice('/api/payments/'.length));
+      if (id) {
+        if (Array.isArray(DB.state.payments)) {
+          const idx = DB.state.payments.findIndex(x => (x.id === id || x.receiptNo === id));
+          if (idx >= 0) DB.state.payments.splice(idx, 1);
+        }
+        DB.version++;
+        await saveDB();
+
+        if (hasMySQL()) {
+          const p = getPool();
+          if (p) {
+            await p.query('DELETE FROM payment_items WHERE receipt_no = ?', [id]).catch(() => {});
+            await p.query('DELETE FROM payments WHERE receipt_no = ?', [id]).catch(err => console.warn('[Direct Payment MySQL Delete Warn]', err.message));
+          }
+        }
+      }
+      return sendJSON(res, 200, { ok: true, version: DB.version });
+    }
     if (url === '/api/backup-status' && req.method === 'GET')
       return sendJSON(res, 200, { serverMode: true, mysql: hasMySQL(), emailConfigured: emailConfigured(), to: BACKUP_EMAIL, day: BACKUP_DAY, hour: BACKUP_HOUR, lastBackupAt: DB.lastBackupAt, excel: !!ExcelJS, dataDir: DATA_DIR, version: DB.version, students: (DB.state.students || []).length, payments: (DB.state.payments || []).length, bootAt: BOOT_AT });
     if (url === '/api/backup.xlsx' && req.method === 'GET') {
