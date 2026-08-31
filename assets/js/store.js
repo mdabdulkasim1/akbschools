@@ -805,12 +805,24 @@
       }
       await this.persistUsers();
     },
-    getUser(username) { return this.users.find(u => u.username.toLowerCase() === String(username).toLowerCase()); },
+    getUser(username) { return this.users.find(u => u.username && u.username.toLowerCase() === String(username).toLowerCase()); },
     async verifyLogin(username, password) {
       const u = this.getUser(username);
       if (!u) return null;
-      const h = await pbkdf(password, u.salt);
-      return h === u.hash ? u : null;
+      let salt = u.salt;
+      let hash = u.hash;
+      if ((!salt || !hash) && u.passwordHash) {
+        if (u.passwordHash.indexOf(':') >= 0) {
+          const parts = u.passwordHash.split(':');
+          salt = parts[0];
+          hash = parts[1];
+        } else {
+          hash = u.passwordHash;
+        }
+      }
+      if (!salt) return null;
+      const h = await pbkdf(password, salt);
+      return h === hash ? u : null;
     },
     async setPassword(username, password) {
       const u = this.getUser(username);

@@ -158,12 +158,24 @@ async function loadDBFromMySQL() {
     });
 
     const [usrRows] = await p.query('SELECT * FROM users');
-    const users = usrRows.map(u => ({
-      username: u.username,
-      name: u.name,
-      role: u.role,
-      passwordHash: u.password_hash
-    }));
+    const users = usrRows.map(u => {
+      let salt = u.salt || '';
+      let hash = u.hash || '';
+      const ph = u.password_hash || u.passwordHash || '';
+      if ((!salt || !hash) && ph.indexOf(':') >= 0) {
+        const parts = ph.split(':');
+        salt = parts[0];
+        hash = parts[1];
+      }
+      return {
+        username: u.username,
+        name: u.name,
+        role: u.role,
+        salt,
+        hash,
+        passwordHash: ph
+      };
+    });
 
     const [fhRows] = await p.query('SELECT * FROM fee_heads');
     const feeHeads = fhRows.map(fh => ({
