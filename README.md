@@ -9,28 +9,6 @@ It is a **single‑page app built with plain HTML/CSS/JavaScript** — no server
 no dependencies. All data is stored **locally in the browser** (IndexedDB), so it runs fully
 offline and nothing is sent anywhere.
 
-## Live app
-
-**<https://akbschool.up.railway.app>** — works on mobile and desktop.
-
-> Run **one** Railway service only. Each service keeps its own copy of the data, so two
-> services means two datasets and the same login can appear to "work on one device but not
-> another." If you have more than one, back up (Data & Backup → Full Backup), keep the service
-> with your data, and delete the rest. See [Deploying to Railway](#deploying-to-railway).
-
-Built‑in logins (change the passwords after first sign‑in):
-
-| Username | Password | Role |
-|----------|----------|------|
-| `admin` | `admin@123` | Administrator (full access) |
-| `account1` / `account2` | `account1@123` / `account2@123` | Account (payments, collections, expenses) |
-| `teacher` | `teacher@123` | All classrooms — Dashboard, Students, Attendance, Attendance Report, Report Cards, Reports (no payments) |
-| `academic` | `academic@123` | All classrooms — Reports, Attendance, Attendance Report, Report Cards, Academics, Data & Backup (no payments) |
-
-The server guarantees these accounts exist and re‑creates them at their default password if the
-stored credential is ever lost or corrupted — **unless** you deliberately change a password in the
-app, which is then preserved across redeploys.
-
 ## Running it
 
 **Option A — just open it**
@@ -145,14 +123,7 @@ The repo includes a tiny zero‑dependency Node static server (`server.js`) that
 2. Pick `mdabdulkasim1/akbschools` and the branch `claude/fee-collection-app-ewi29a`
    (or merge it to your default branch first and deploy that).
 3. Railway auto‑detects Node, runs `npm start` (`node server.js`). No build config needed.
-4. Under **Settings → Networking → Public Networking**, generate a domain — then click the
-   **Edit** (pencil) on it to set a clean prefix, e.g. `akbschool` → `https://akbschool.up.railway.app`.
-
-> **Run only one service.** If Railway shows more than one service for this app (e.g. an extra
-> auto‑named one like `striking-imagination`), each has its **own separate data**. Pick the one
-> whose Volume holds your real students/payments, and **delete the others**
-> (service → **Settings → Delete Service**) after taking a Full Backup. Two services = two
-> datasets = logins that seem to work on one device but not another.
+4. Under **Settings → Networking → Generate Domain** to get a public URL.
 
 **Or with the Railway CLI:**
 ```bash

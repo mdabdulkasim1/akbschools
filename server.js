@@ -24,25 +24,14 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-let ExcelJS = null, nodemailer = null;
+let ExcelJS = null, nodemailer = null, mysql = null;
 try { ExcelJS = require('exceljs'); } catch (e) { console.warn('exceljs not installed — Excel export disabled'); }
 try { nodemailer = require('nodemailer'); } catch (e) { console.warn('nodemailer not installed — email disabled'); }
+try { mysql = require('mysql2/promise'); } catch (e) { console.warn('mysql2 not installed — MySQL database storage disabled'); }
 
 const PORT = process.env.PORT || 3000;
 const ROOT = __dirname;
 const BOOT_AT = new Date().toISOString(); // when this server process last started
-// Content hash of the client code — changes only when the app is redeployed with
-// new code. Clients compare it and reload themselves so a long-open tab can't keep
-// running stale JavaScript after a deploy.
-const BUILD_ID = (() => {
-  try {
-    const crypto = require('crypto');
-    const files = ['index.html', 'assets/js/store.js', 'assets/js/views.js', 'assets/js/app.js', 'assets/js/utils.js', 'assets/js/auth.js', 'assets/js/receipt.js'];
-    const h = crypto.createHash('sha1');
-    files.forEach(f => { try { h.update(fs.readFileSync(path.join(ROOT, f))); } catch (e) {} });
-    return h.digest('hex').slice(0, 12);
-  } catch (e) { return String(Date.now()); }
-})();
 const USER = process.env.APP_USER || 'admin';
 const PASS = process.env.APP_PASSWORD || '';
 const SCHOOL = 'AKB School of Excellence';
@@ -50,6 +39,43 @@ const BACKUP_EMAIL = process.env.BACKUP_EMAIL || 'contact@akbschools.com';
 const BACKUP_DAY = clampInt(process.env.BACKUP_DAY, 1, 0, 6);
 const BACKUP_HOUR = clampInt(process.env.BACKUP_HOUR, 6, 0, 23);
 function clampInt(v, def, lo, hi) { v = parseInt(v, 10); return isNaN(v) ? def : Math.max(lo, Math.min(hi, v)); }
+
+/* ---------------- MySQL / Database Integration ---------------- */
+const MYSQL_URL = process.env.MYSQL_URL || process.env.DATABASE_URL || '';
+const MYSQL_HOST = process.env.MYSQL_HOST || '';
+const MYSQL_USER = process.env.MYSQL_USER || 'root';
+const MYSQL_PASSWORD = process.env.MYSQL_PASSWORD !== undefined ? process.env.MYSQL_PASSWORD : '';
+const MYSQL_DATABASE = process.env.MYSQL_DATABASE || 'akb-school-mk';
+const MYSQL_PORT = parseInt(process.env.MYSQL_PORT, 10) || 3306;
+
+let pool = null;
+function getPool() {
+  if (pool) return pool;
+  if (!mysql) return null;
+  try {
+    if (MYSQL_URL) {
+      pool = mysql.createPool(MYSQL_URL);
+      return pool;
+    }
+    if (MYSQL_HOST) {
+      pool = mysql.createPool({
+        host: MYSQL_HOST,
+        user: MYSQL_USER,
+        password: MYSQL_PASSWORD,
+        database: MYSQL_DATABASE,
+        port: MYSQL_PORT,
+        waitForConnections: true,
+        connectionLimit: 10,
+        queueLimit: 0
+      });
+      return pool;
+    }
+  } catch (err) {
+    console.warn('[MySQL Pool Error]', err.message);
+  }
+  return null;
+}
+function hasMySQL() { return !!(mysql && (MYSQL_URL || MYSQL_HOST)); }
 
 /* ---------------- persistent state ---------------- */
 const DATA_DIR = resolveDataDir();
@@ -74,137 +100,163 @@ function saveDB() {
 }
 loadDB();
 
-/* ---------------- server-side account provisioning ----------------
- * The user list is normally managed in the browser, but sync hiccups have made
- * added logins vanish. To guarantee a usable teacher login exists on the shared
- * server, (re)create a "teacher" account here on boot if it is missing — with a
- * password hash the client accepts (same PBKDF2-SHA256), all classrooms, and
- * access to Dashboard, Students, Attendance, Attendance Report, Report Cards &
- * Reports. It is only created when absent, so admin edits to it are preserved. */
-function fbHashSrv(password, saltHex) {
-  // Mirror of the client's non-WebCrypto fallback (FNV-1a) so a device without
-  // crypto.subtle can still log in to a server-provisioned account.
-  let h = 2166136261 >>> 0; const str = saltHex + '|' + String(password);
-  for (let i = 0; i < str.length; i++) { h = (h ^ str.charCodeAt(i)) >>> 0; h = Math.imul(h, 16777619) >>> 0; }
-  return 'fb' + h.toString(16);
-}
-function makeCred(password) {
-  const crypto = require('crypto');
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.pbkdf2Sync(String(password), Buffer.from(salt, 'hex'), 100000, 32, 'sha256').toString('hex');
-  return { salt, hash, hashFb: fbHashSrv(password, salt) };
-}
-function verifyCred(password, u) {
+async function loadDBFromMySQL() {
+  const p = getPool();
+  if (!p) return false;
   try {
-    if (!u || !u.salt) return false;
-    const crypto = require('crypto');
-    const strong = crypto.pbkdf2Sync(String(password), Buffer.from(String(u.salt), 'hex'), 100000, 32, 'sha256').toString('hex');
-    const fb = fbHashSrv(password, u.salt);
-    return strong === u.hash || fb === u.hash || (u.hashFb && (strong === u.hashFb || fb === u.hashFb));
-  } catch (e) { return false; }
-}
-// A proper PBKDF2-SHA256 hash is 64 hex chars; the weak FNV fallback is "fb"+few
-// chars. Older cached clients only match the strong form, so an account whose
-// stored hash is still the weak fallback fails to log in on those tabs. Detect it.
-function isStrongHash(h) { return typeof h === 'string' && /^[0-9a-f]{64}$/.test(h); }
-// Guaranteed, server-managed logins. Each is (re)created on boot if missing, and
-// if it exists but its password no longer matches, it is reset to the default
-// (so the documented credential always works). Their role, page access and
-// (all-)class scope are ENFORCED to the definition below on every boot, so these
-// managed accounts always stay exactly as specified and never silently drift.
-const PROVISIONED = [
-  { username: 'teacher', name: 'Teacher', password: 'teacher@123', role: 'teacher',
-    pages: ['dashboard', 'students', 'attendance', 'attreport', 'marks', 'reports'], allClasses: true },
-  { username: 'academic', name: 'Academic', password: 'academic@123', role: 'akbch_academics',
-    pages: ['attendance', 'attreport', 'marks', 'academics', 'data'], allClasses: true },
-];
-// The built-in accounts. Normally seeded in the browser, but if the shared
-// server state is ever reset they'd vanish (only teacher/academic are re-made).
-// Guarantee they exist here too: create if missing (default password), and
-// backfill the fallback hash when the default still applies — but NEVER reset a
-// password that has been deliberately changed.
-const SEED = [
-  { username: 'admin', name: 'Administrator', password: 'admin@123', role: 'admin' },
-  { username: 'account1', name: 'Account 1', password: 'account1@123', role: 'account' },
-  { username: 'account2', name: 'Account 2', password: 'account2@123', role: 'account' },
-];
-function ensureProvisionedUsers() {
-  const st = DB.state || (DB.state = { students: [], payments: [], users: [], meta: {} });
-  st.users = st.users || [];
-  const allGrades = () => Array.from(new Set((st.students || []).map(s => s && s.grade).filter(Boolean)));
-  let changed = false;
-
-  SEED.forEach(def => {
-    const u = st.users.find(x => String(x.username).toLowerCase() === def.username);
-    if (!u) {
-      const cred = makeCred(def.password);
-      st.users.push({ username: def.username, name: def.name, role: def.role, salt: cred.salt, hash: cred.hash, hashFb: cred.hashFb, mustChange: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
-      changed = true;
-      console.log('Provisioned seed "' + def.username + '" (' + def.username + ' / ' + def.password + ').');
-    } else if (verifyCred(def.password, u)) {
-      // Default password still applies. Heal a weak/legacy stored hash to a
-      // proper PBKDF2 one so even older cached clients can log in.
-      if (!isStrongHash(u.hash)) {
-        const cred = makeCred(def.password);
-        u.salt = cred.salt; u.hash = cred.hash; u.hashFb = cred.hashFb;
-        u.updatedAt = new Date().toISOString(); changed = true;
-        console.log('Healed "' + def.username + '" login hash to PBKDF2.');
-      } else {
-        const fb = fbHashSrv(def.password, u.salt);
-        if (u.hashFb !== fb) { u.hashFb = fb; u.updatedAt = new Date().toISOString(); changed = true; }
-      }
-    } else if (!u.pwCustom) {
-      // The stored credential can't verify the default AND the password was
-      // never deliberately changed in the app (no pwCustom flag). This is the
-      // corrupted / legacy-incompatible case that locks admin out — reset it to
-      // the documented default so the login always works.
-      const cred = makeCred(def.password);
-      u.salt = cred.salt; u.hash = cred.hash; u.hashFb = cred.hashFb;
-      u.role = def.role; u.mustChange = false; u.updatedAt = new Date().toISOString();
-      changed = true;
-      console.log('Reset seed "' + def.username + '" to default password (' + def.username + ' / ' + def.password + ').');
-    } // else: a password was deliberately changed in-app (pwCustom) — leave it untouched.
-  });
-
-  PROVISIONED.forEach(def => {
-    let u = st.users.find(x => String(x.username).toLowerCase() === def.username);
-    const grades = def.allClasses ? allGrades() : [];
-    if (!u) {
-      const cred = makeCred(def.password);
-      u = { username: def.username, name: def.name, role: def.role, salt: cred.salt, hash: cred.hash, hashFb: cred.hashFb, mustChange: false, grades: grades, pages: def.pages.slice(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-      st.users.push(u); changed = true;
-      console.log('Provisioned "' + def.username + '" login (' + def.username + ' / ' + def.password + ') with ' + grades.length + ' classes.');
-    } else if (!verifyCred(def.password, u)) {
-      const cred = makeCred(def.password);
-      u.salt = cred.salt; u.hash = cred.hash; u.hashFb = cred.hashFb; u.role = def.role; u.mustChange = false;
-      u.grades = grades; u.pages = def.pages.slice(); u.updatedAt = new Date().toISOString();
-      changed = true;
-      console.log('Reset "' + def.username + '" login to default password with ' + grades.length + ' classes.');
-    } else {
-      // password already correct — heal a weak/legacy hash...
-      if (!isStrongHash(u.hash)) {
-        const cred = makeCred(def.password);
-        u.salt = cred.salt; u.hash = cred.hash; u.hashFb = cred.hashFb; changed = true;
-        console.log('Healed "' + def.username + '" login hash to PBKDF2.');
-      } else {
-        const fb = fbHashSrv(def.password, u.salt);
-        if (u.hashFb !== fb) { u.hashFb = fb; changed = true; }
-      }
-      // ...and ENFORCE the managed role / page access / class scope so these
-      // accounts always match the definition above (never drift after edits).
-      const eq = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => x === b[i]);
-      const sameSet = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.slice().sort().join('') === b.slice().sort().join('');
-      if (u.role !== def.role) { u.role = def.role; changed = true; }
-      if (!eq(u.pages, def.pages)) { u.pages = def.pages.slice(); changed = true; }
-      if (def.allClasses && !sameSet(u.grades, grades)) { u.grades = grades; changed = true; }
-      if (changed) u.updatedAt = new Date().toISOString();
+    const [stRows] = await p.query('SELECT * FROM students');
+    const [sfRows] = await p.query('SELECT * FROM student_fees');
+    const feesMap = {};
+    for (const sf of sfRows) {
+      if (!feesMap[sf.student_id]) feesMap[sf.student_id] = {};
+      feesMap[sf.student_id][sf.head_key] = {
+        label: sf.head_key,
+        total: Number(sf.total_amount) || 0,
+        paid: Number(sf.paid_amount) || 0,
+        balance: Number(sf.balance_amount) || 0
+      };
     }
-  });
+    const students = stRows.map(s => ({
+      id: s.id,
+      name: s.name,
+      grade: s.grade,
+      classTeacher: s.class_teacher,
+      gender: s.gender,
+      dob: s.dob,
+      age: s.age,
+      father: s.father,
+      mother: s.mother,
+      contact: s.contact,
+      religion: s.religion,
+      location: s.location,
+      dropLocation: s.drop_location,
+      transportType: s.transport_type,
+      vehicle: s.vehicle,
+      status: s.status,
+      discount: Number(s.discount) || 0,
+      admission: s.admission,
+      sportsActivity: s.sports_activity,
+      fees: feesMap[s.id] || {}
+    }));
 
-  return changed;
+    const [pmRows] = await p.query('SELECT * FROM payments');
+    const payments = pmRows.map(pm => {
+      let items = [];
+      try { items = typeof pm.items_json === 'string' ? JSON.parse(pm.items_json) : (pm.items_json || []); } catch (e) {}
+      return {
+        id: pm.receipt_no,
+        receiptNo: pm.receipt_no,
+        date: pm.date,
+        businessName: pm.business_name,
+        studentId: pm.student_id,
+        studentName: pm.student_name,
+        grade: pm.grade,
+        mode: pm.mode,
+        amount: Number(pm.amount) || 0,
+        items
+      };
+    });
+
+    const [usrRows] = await p.query('SELECT * FROM users');
+    const users = usrRows.map(u => ({
+      username: u.username,
+      name: u.name,
+      role: u.role,
+      passwordHash: u.password_hash
+    }));
+
+    const [fhRows] = await p.query('SELECT * FROM fee_heads');
+    const feeHeads = fhRows.map(fh => ({
+      key: fh.head_key,
+      label: fh.label,
+      business: fh.business
+    }));
+
+    if (students.length > 0) {
+      DB.state = {
+        students,
+        payments,
+        users: users.length > 0 ? users : DB.state.users,
+        meta: feeHeads.length > 0 ? { feeHeads } : DB.state.meta
+      };
+      return true;
+    }
+  } catch (err) {
+    console.warn('[MySQL Load Warn]', err.message);
+  }
+  return false;
 }
-// Run on boot, and persist if it created/repaired anything.
-if (ensureProvisionedUsers()) { DB.version++; saveDB(); }
+
+async function saveDBToMySQL(state) {
+  const p = getPool();
+  if (!p) return;
+  try {
+    if (Array.isArray(state.payments)) {
+      for (const pm of state.payments) {
+        const receiptNo = pm.receiptNo || pm.id;
+        if (!receiptNo) continue;
+        const itemsJson = JSON.stringify(pm.items || []);
+        await p.query(
+          `INSERT INTO payments (receipt_no, date, business_name, student_id, student_name, grade, mode, amount, items_json, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+           ON DUPLICATE KEY UPDATE
+             date=VALUES(date), business_name=VALUES(business_name), student_name=VALUES(student_name),
+             grade=VALUES(grade), mode=VALUES(mode), amount=VALUES(amount), items_json=VALUES(items_json)`,
+          [receiptNo, pm.date || '', pm.businessName || '', pm.studentId || '', pm.studentName || '', pm.grade || '', pm.mode || '', Number(pm.amount) || 0, itemsJson]
+        );
+
+        if (Array.isArray(pm.items)) {
+          for (const item of pm.items) {
+            await p.query(
+              `INSERT INTO payment_items (receipt_no, head_key, head_label, business_name, amount)
+               VALUES (?, ?, ?, ?, ?)`,
+              [receiptNo, item.headKey || item.key || '', item.label || '', pm.businessName || '', Number(item.amount) || 0]
+            ).catch(() => {});
+          }
+        }
+      }
+    }
+
+    if (Array.isArray(state.students)) {
+      for (const s of state.students) {
+        if (!s.id) continue;
+        await p.query(
+          `INSERT INTO students (id, name, grade, class_teacher, gender, father, mother, contact, religion, location, drop_location, transport_type, vehicle, status, discount, admission, sports_activity, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+           ON DUPLICATE KEY UPDATE
+             name=VALUES(name), grade=VALUES(grade), class_teacher=VALUES(class_teacher), contact=VALUES(contact),
+             status=VALUES(status), discount=VALUES(discount), updated_at=NOW()`,
+          [s.id, s.name || '', s.grade || '', s.classTeacher || null, s.gender || null, s.father || null, s.mother || null, s.contact || null, s.religion || null, s.location || null, s.dropLocation || null, s.transportType || null, s.vehicle || null, s.status || 'active', Number(s.discount) || 0, s.admission || 'NEW', s.sportsActivity || null]
+        );
+
+        if (s.fees && typeof s.fees === 'object') {
+          for (const headKey of Object.keys(s.fees)) {
+            const f = s.fees[headKey];
+            if (!f) continue;
+            const tot = Number(f.total) || 0;
+            const pd = Number(f.paid) || 0;
+            const bal = Number(f.balance) || (tot - pd);
+            await p.query(
+              `INSERT INTO student_fees (student_id, head_key, total_amount, paid_amount, balance_amount, updated_at)
+               VALUES (?, ?, ?, ?, ?, NOW())
+               ON DUPLICATE KEY UPDATE
+                 total_amount=VALUES(total_amount), paid_amount=VALUES(paid_amount), balance_amount=VALUES(balance_amount), updated_at=NOW()`,
+              [s.id, headKey, tot, pd, bal]
+            );
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[MySQL Save Warn]', err.message);
+  }
+}
+
+if (hasMySQL()) {
+  loadDBFromMySQL().then(ok => {
+    if (ok) console.log('Successfully connected and loaded state from MySQL database');
+  });
+}
 
 /* ---------------- helpers ---------------- */
 const MIME = {
@@ -369,23 +421,22 @@ const server = http.createServer(async (req, res) => {
   if (!checkAuth(req)) return unauthorized(res);
   const url = (req.url || '/').split('?')[0];
   try {
-    if (url === '/api/state' && req.method === 'GET') return sendJSON(res, 200, Object.assign({ buildId: BUILD_ID }, DB));
+    if (url === '/api/state' && req.method === 'GET') return sendJSON(res, 200, DB);
     if (url === '/api/state' && req.method === 'PUT') {
       const body = JSON.parse(await readBody(req));
-      if (typeof body.baseVersion === 'number' && body.baseVersion !== DB.version) return sendJSON(res, 409, Object.assign({ buildId: BUILD_ID }, DB));
+      if (typeof body.baseVersion === 'number' && body.baseVersion !== DB.version) return sendJSON(res, 409, DB);
       if (body.state) {
-        DB.state = body.state; DB.version++;
-        // Re-ensure the guaranteed logins on every save so a deleted managed
-        // account (admin/account/teacher/academic) is immediately restored and
-        // its access re-enforced — not only on server boot.
-        ensureProvisionedUsers();
+        DB.state = body.state;
+        DB.version++;
         await saveDB();
+        if (hasMySQL()) {
+          saveDBToMySQL(body.state).catch(err => console.warn('MySQL async save error:', err.message));
+        }
       }
-      return sendJSON(res, 200, { version: DB.version, buildId: BUILD_ID });
+      return sendJSON(res, 200, { version: DB.version });
     }
-    if (url === '/api/version' && req.method === 'GET') return sendJSON(res, 200, { buildId: BUILD_ID, version: DB.version });
     if (url === '/api/backup-status' && req.method === 'GET')
-      return sendJSON(res, 200, { serverMode: true, emailConfigured: emailConfigured(), to: BACKUP_EMAIL, day: BACKUP_DAY, hour: BACKUP_HOUR, lastBackupAt: DB.lastBackupAt, excel: !!ExcelJS, dataDir: DATA_DIR, version: DB.version, students: (DB.state.students || []).length, payments: (DB.state.payments || []).length, bootAt: BOOT_AT });
+      return sendJSON(res, 200, { serverMode: true, mysql: hasMySQL(), emailConfigured: emailConfigured(), to: BACKUP_EMAIL, day: BACKUP_DAY, hour: BACKUP_HOUR, lastBackupAt: DB.lastBackupAt, excel: !!ExcelJS, dataDir: DATA_DIR, version: DB.version, students: (DB.state.students || []).length, payments: (DB.state.payments || []).length, bootAt: BOOT_AT });
     if (url === '/api/backup.xlsx' && req.method === 'GET') {
       const buf = await buildWorkbook();
       res.writeHead(200, { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': 'attachment; filename="akb-fees-backup.xlsx"', 'Cache-Control': 'no-store' });

@@ -20,7 +20,7 @@
   })();
 
   const DB_NAME = 'akb_fees';
-  const DB_VERSION = 3;
+  const DB_VERSION = 2;
   const STORES = ['students', 'payments', 'meta', 'users'];
 
   // Business entities / bank accounts (from PAYMENT COLLECTION SUMMARY REPO)
@@ -118,7 +118,6 @@
     { key: 'students',    label: 'Students',          icon: '👨‍🎓' },
     { key: 'collect',     label: 'Receive Payment',   icon: '🧾' },
     { key: 'collections', label: 'Collections',       icon: '💵' },
-    { key: 'expenses',    label: 'Expenses',          icon: '💸' },
     { key: 'reports',     label: 'Reports',           icon: '📈' },
     { key: 'attendance',  label: 'Attendance',        icon: '📝' },
     { key: 'attreport',   label: 'Attendance Report', icon: '📅' },
@@ -130,7 +129,7 @@
   const PAGE_KEYS = PAGES.map(p => p.key);
   // Money pages: collecting payments / issuing receipts / viewing collections.
   // Restricted to Account + Administrator only, regardless of page grants.
-  const FINANCIAL_PAGES = ['collect', 'collections', 'expenses'];
+  const FINANCIAL_PAGES = ['collect', 'collections'];
   function roleCanCollect(role) { return role === 'admin' || role === 'account'; }
   // Pages that may be offered to a role in the access picker (hide money pages
   // for roles that can never collect).
@@ -147,7 +146,7 @@
   // Sensible starting page-set for each role (admin => everything).
   const DEFAULT_PAGES = {
     admin: PAGE_KEYS.slice(),
-    account: ['dashboard', 'students', 'collect', 'collections', 'expenses', 'reports'],
+    account: ['dashboard', 'students', 'collect', 'collections', 'reports'],
     teacher: ['attendance', 'marks'],
     akbch_academics: ['dashboard', 'students', 'attendance', 'attreport', 'marks', 'academics'],
     akb_admins: ['dashboard', 'students', 'reports', 'attendance', 'attreport', 'marks', 'academics']
@@ -163,70 +162,6 @@
     if (!roleCanCollect(u.role)) list = list.filter(k => FINANCIAL_PAGES.indexOf(k) < 0);
     return list;
   }
-
-  /* ---- Expenses ----
-   * Expense categories, each defaulting to the firm (business) that usually
-   * bears it — but the account may pick a different firm on any entry. The list
-   * is admin-editable (add/rename/remove) and stored in meta.expenseCats. */
-  const DEFAULT_EXPENSE_CATS = [
-    { key: 'academic',  label: 'Academic',       business: 'school' },
-    { key: 'admin',     label: 'Admin',          business: 'school' },
-    { key: 'transport', label: 'Transport',      business: 'falcon' },
-    { key: 'pantry',    label: 'Pantry',         business: 'school' },
-    { key: 'event',     label: 'Event Expense',  business: 'co' },
-    { key: 'sports',    label: 'Sports',         business: 'co' },
-    { key: 'books',     label: 'Books',          business: 'co' },
-    { key: 'uniform',   label: 'Uniform',        business: 'co' },
-    { key: 'salary',    label: 'Salary',         business: 'school' }
-  ];
-  function slugKey(s) { return String(s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || ('c' + Date.now()); }
-
-  // Expense SUB-CATEGORIES: the specific bill item/purpose the account picks
-  // (e.g. PETROL, BOOKS, SALARY). A flat, admin-editable list; account entries
-  // may also add a new one on the fly. Stored in meta.expenseItems.
-  const DEFAULT_EXPENSE_ITEMS = [
-    "3MM ACRYLIC", "AAC BLOCK", "ABACUS BOOKS", "ABACUS SALARY",
-    "ABACUS STAFF SALARY", "AC", "ACADEMIC DIRECTOR", "ADMIN HEAD",
-    "ADMIN OFFICE", "ADVERTISEMENT", "ANNUAL DAY", "APPLICATION FEES",
-    "APPROVAL", "ARABIC BOOK PRINT", "ARCHERY", "ASSETS",
-    "ATTENDERS", "AUTO CHARGES", "BAG", "BAND DRESS",
-    "BANNER", "BIRTHDAY GIFT CARD", "BONUS", "BOOKS",
-    "BOUQUETS", "BRICKS", "BUS RENTAL", "BUS SEAT COVER",
-    "BUS STICKER", "CALENDAR", "CAMERA STAND", "CANVASING",
-    "CARPENTER", "CARROM BOARD", "CEMENT", "CENTRING",
-    "CERTIFICATE", "CHAIRMAN SIR", "CHAIRMAN SIR APPROVAL", "CHEMICAL",
-    "CHESS MAT", "CLEANING MATERIAL", "COFFEE & TEA POWDER", "CONCRETE",
-    "CONTRIBUTION", "DIRECTOR SALARY", "DOOR CLOSER", "DR.K SIR LAPTOP SERVICE",
-    "DRIVER BATTA", "DRIVER SALARY", "DRIVER SALARY INCREMENT", "EB BILL",
-    "ECA & CCA SYLLABUS", "EDUCATIONAL HELP", "ELECTRICAL MATERIAL", "ELECTRICIAN",
-    "ERP SOFTWARE", "ESIC & PF", "EVENING EXTRA TRIP", "EXTRA SPORTS",
-    "FAN", "FEES CARD", "FILLING CHARGES", "FIRE CLOSING AMOUNT",
-    "FIRE GAS FILLING", "FIRST AID KIT", "FOOD", "FRONT GLASS",
-    "FUEL TANK COVER", "FURNITURE TRANSPORT", "G.P MAM ROOM ALTERATION", "GENERAL CHECKUP",
-    "GRAND FATHER", "GRASS KILLER TAP & GO", "GREASE", "GUIDE",
-    "GUM", "HANDWRITING CLASS", "HIJAB", "HOUSE KEEPING",
-    "I.D CARD", "INDEPENDENCE DAY", "INSPECTION AMOUNT", "INSURANCE",
-    "INTERACTIVE PANEL", "IT DEPARTMENT", "JCB WORK", "JUMMAH",
-    "KABADDI T-SHIRT SET", "KG UNIFORM", "LAB MATERIALS", "LABOUR",
-    "LABOUR MANSOON", "LABOUR PAINTER", "LADDER", "LAND & BUILDING",
-    "LOADING & UNLOADING", "MAINTENANCE", "MAKKANA", "MAT",
-    "MEDICINE", "MILK", "MONTH OF TEACHER", "NEWSPAPER",
-    "NOTE BOOK", "NUMBER PLATE FIXING", "OIL CHANGING", "PANTRY",
-    "PERSONAL", "PETROL", "POLLUTION TEST", "PRESS",
-    "PRINCIPAL SALARY", "PRINTER TONER", "PROPERTY TAX", "PUNCTURE",
-    "RAFEEQUE BIKE", "RECEIPT BOOK", "REGISTER BOOK", "REPAIR & MAINTENANCE",
-    "REPAIR SERVICE", "RIBBON (ID CARD)", "RO FILTER", "ROBO",
-    "RUBBER STAMP", "SALARY", "SAND / CEMENT", "SANITATION CERTIFICATE",
-    "SCHOOL BUS STICKERS", "SEAT COVER", "SECURITY SALARY", "SERVICE",
-    "SHOE", "SOLAR ISSUING", "SPORTS MATERIALS", "STAFF UNIFORM",
-    "STAFF UNIFORM (NURSERY)", "STEEL FRAME", "STUDENT UNIFORM", "STUDENTS DIARY",
-    "STUDENTS UNIFORM", "SUGAR", "SYNTHETIC MATERIALS", "TAMIL BOOK",
-    "TEACHER OF MONTH", "TEACHER SALARY", "TEACHER TABLE", "TEACHER TRAINING",
-    "TEACHER UNIFORM", "THROW BALL COACH", "TRANSPORT HEAD", "TRAVELLING ALLOWANCE",
-    "TUITION SALARY", "TURBAN OIL", "TYRE CHANGING", "UNIFORM STUDENT",
-    "UTILITY", "VOC BUILDING NAME CHANGE", "VOLLEY BALL", "VOLLEY BALL PITCH",
-    "WIFI"
-  ];
 
   // Rebuild the HEAD_* lookups (in place) from a fee-head config array.
   function rebuildHeads(feeHeads) {
@@ -248,24 +183,11 @@
   let useIDB = true;
   // server-shared-state mode (set at init if /api/state is reachable)
   let serverMode = false, baseVersion = 0, syncTimer = null, syncing = false, syncAgain = false, dirty = false;
-  let bootBuildId = null, newBuildSignalled = false;
-  // Compare the server's code build-id with the one this tab booted on; if it
-  // changed, the app was redeployed — signal the UI to reload so no tab keeps
-  // running stale JavaScript (the usual cause of "my change didn't take effect").
-  function checkBuild(obj) {
-    const b = obj && obj.buildId; if (!b) return;
-    if (!bootBuildId) { bootBuildId = b; return; }
-    if (b !== bootBuildId && !newBuildSignalled) {
-      newBuildSignalled = true;
-      try { window.dispatchEvent(new CustomEvent('akb-newbuild')); } catch (e) {}
-    }
-  }
 
   const Store = {
     students: [],   // in-memory cache
     payments: [],
     users: [],
-    expenses: [],
     feeHeads: [],
     meta: {},
     currentUser: null,
@@ -273,7 +195,6 @@
     SCHOOL_WHATSAPP, SCHOOL_WHATSAPP_DISPLAY, DEFAULT_FEE_HEADS,
     REPORT, isKG, MULTI_HEADS,
     PAGES, PAGE_KEYS, ROLES, ROLE_LABEL, defaultPagesFor, pageListFor,
-    DEFAULT_EXPENSE_CATS, DEFAULT_EXPENSE_ITEMS,
 
     serverMode() { return serverMode; },
 
@@ -281,7 +202,7 @@
       // Prefer shared server state (all devices see one dataset)
       try {
         const r = await fetch('api/state', { cache: 'no-store' });
-        if (r.ok) { serverMode = true; const j = await r.json(); checkBuild(j); this._applyServer(j); }
+        if (r.ok) { serverMode = true; this._applyServer(await r.json()); }
       } catch (e) { serverMode = false; }
 
       if (!serverMode) {
@@ -335,14 +256,13 @@
     },
 
     /* ---- persistence (server if available, else IndexedDB/localStorage) ---- */
-    _snapshot() { return { students: this.students, payments: this.payments, users: this.users, expenses: this.expenses, meta: this.meta }; },
+    _snapshot() { return { students: this.students, payments: this.payments, users: this.users, meta: this.meta }; },
     _applyServer(dbObj) {
       baseVersion = (dbObj && dbObj.version) || 0;
       const st = (dbObj && dbObj.state) || {};
       this.students = st.students || [];
       this.payments = st.payments || [];
       this.users = st.users || [];
-      this.expenses = st.expenses || [];
       this.meta = st.meta || {};
       if (Array.isArray(this.meta.feeHeads) && this.meta.feeHeads.length) { this.feeHeads = this.meta.feeHeads; rebuildHeads(this.feeHeads); }
       this.recomputeAll();
@@ -357,13 +277,11 @@
         await idbClear('students'); await idbPutMany('students', this.students);
         await idbClear('payments'); await idbPutMany('payments', this.payments);
         await idbClear('users'); await idbPutMany('users', this.users);
-        await idbClear('expenses'); await idbPutMany('expenses', this.expenses);
         await idbPut('meta', { id: 'meta', value: this.meta });
       } else {
         LS.setItem('akb_students', JSON.stringify(this.students));
         LS.setItem('akb_payments', JSON.stringify(this.payments));
         LS.setItem('akb_users', JSON.stringify(this.users));
-        LS.setItem('akb_expenses', JSON.stringify(this.expenses));
         LS.setItem('akb_meta', JSON.stringify(this.meta));
       }
     },
@@ -377,95 +295,23 @@
           await idbClear('students'); await idbPutMany('students', this.students);
           await idbClear('payments'); await idbPutMany('payments', this.payments);
           await idbClear('users'); await idbPutMany('users', this.users);
-          await idbClear('expenses'); await idbPutMany('expenses', this.expenses);
           await idbPut('meta', { id: 'meta', value: this.meta });
         } catch (e) { /* mirror is best-effort */ }
       });
     },
-    _scheduleSync() { dirty = true; clearTimeout(syncTimer); syncTimer = setTimeout(() => this._syncNow(), 350); this._emitSync(); },
-    pendingSync() { return dirty; },
-    _emitSync() { try { w.dispatchEvent(new CustomEvent('akb-sync')); } catch (e) {} },
-    // Poll the tiny version endpoint so even an idle tab notices a redeploy and
-    // reloads — before its stale code can overwrite the shared data.
-    async _pollVersion() {
-      if (!serverMode) return;
-      try { const r = await fetch('api/version', { cache: 'no-store' }); if (r.ok) checkBuild(await r.json()); } catch (e) {}
-    },
-    startVersionWatch() {
-      if (!serverMode || this._versionWatch) return;
-      this._versionWatch = true;
-      try { setInterval(() => this._pollVersion(), 60000); } catch (e) {}
-      try { w.addEventListener('focus', () => this._pollVersion()); } catch (e) {}
-      try { w.addEventListener('visibilitychange', () => { if (!document.hidden) this._pollVersion(); }); } catch (e) {}
-    },
-    // Overall connection/save state for the UI badge.
-    syncState() {
-      if (!serverMode) return 'offline';       // not connected to the shared server (this device only)
-      if (dirty || syncing) return 'saving';    // change pending / in flight
-      return 'saved';                            // everything is on the server
-    },
-    // Merge on a version conflict instead of discarding this device's unsynced
-    // changes. Newly created users and recorded payments are PRESERVED (union),
-    // so they are never silently lost; student/meta take the server's latest
-    // (documented last-writer behaviour for fee data).
-    _mergeOnConflict(serverDb) {
-      const st = (serverDb && serverDb.state) || {};
-      const srvUsers = st.users || [];
-      const srvPayments = st.payments || [];
-      const lc = v => String(v == null ? '' : v).toLowerCase();
-      // Users: keep every server user; on a username collision keep whichever
-      // copy was edited MOST RECENTLY (by updatedAt) — so a fresh change here
-      // wins, but a stale copy on this device does NOT clobber a change made on
-      // another device (e.g. an admin assigning a teacher's classes). Users that
-      // exist only on this device (just created) are always kept.
-      const localByName = new Map(this.users.map(u => [lc(u.username), u]));
-      const srvNames = new Set(srvUsers.map(u => lc(u.username)));
-      const stamp = u => String((u && (u.updatedAt || u.createdAt)) || '');
-      const mergedUsers = srvUsers.map(su => {
-        const lu = localByName.get(lc(su.username));
-        if (!lu) return su;
-        return stamp(lu) >= stamp(su) ? lu : su; // newer edit wins (tie → local)
-      });
-      this.users.forEach(u => { if (!srvNames.has(lc(u.username))) mergedUsers.push(u); });
-      // Payments: union by id — never drop a receipt recorded on this device.
-      const payById = new Map(srvPayments.map(p => [p.id, p]));
-      this.payments.forEach(p => { if (p && !payById.has(p.id)) payById.set(p.id, p); });
-      // Expenses: union by id — never drop an expense recorded on this device.
-      const expById = new Map((st.expenses || []).map(e => [e.id, e]));
-      this.expenses.forEach(e => { if (e && !expById.has(e.id)) expById.set(e.id, e); });
-      this.students = st.students || [];
-      this.meta = st.meta || {};
-      this.payments = Array.from(payById.values());
-      this.expenses = Array.from(expById.values());
-      this.users = mergedUsers;
-      if (Array.isArray(this.meta.feeHeads) && this.meta.feeHeads.length) { this.feeHeads = this.meta.feeHeads; rebuildHeads(this.feeHeads); }
-      baseVersion = (serverDb && serverDb.version) || 0;
-      this.recomputeAll();
-      this._mirrorLocal();
-    },
+    _scheduleSync() { dirty = true; clearTimeout(syncTimer); syncTimer = setTimeout(() => this._syncNow(), 350); },
     async _syncNow() {
       if (syncing) { syncAgain = true; return; }
       syncing = true;
-      this._emitSync();
       try {
-        for (let attempt = 0; attempt < 6; attempt++) {
-          let r;
-          try {
-            r = await fetch('api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ baseVersion, state: this._snapshot() }) });
-          } catch (e) { break; /* offline — will retry on next change/flush */ }
-          if (r.status === 409) {
-            let srv = null; try { srv = await r.json(); } catch (e) { break; }
-            checkBuild(srv);
-            this._mergeOnConflict(srv);               // preserve local users/payments, adopt server base
-            if (w.Router && w.Router.render) w.Router.render();
-            continue;                                  // retry the PUT with the merged state
-          } else if (r.ok) {
-            try { const j = await r.json(); baseVersion = j.version; checkBuild(j); } catch (e) {}
-            dirty = false;
-            break;
-          } else { break; /* server error — leave dirty, retry later */ }
-        }
-      } finally { syncing = false; this._emitSync(); }
+        const r = await fetch('api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ baseVersion, state: this._snapshot() }) });
+        if (r.status === 409) {
+          this._applyServer(await r.json());
+          U.toast('Reloaded latest data (another device was editing)', 'error');
+          if (w.Router && w.Router.render) w.Router.render();
+        } else if (r.ok) { baseVersion = (await r.json()).version; dirty = false; }
+      } catch (e) { /* offline — will retry on next change */ }
+      syncing = false;
       if (syncAgain) { syncAgain = false; this._scheduleSync(); }
     },
     // force any pending change to the server now (called on logout / tab close)
@@ -480,14 +326,12 @@
         this.students = await idbAll('students');
         this.payments = await idbAll('payments');
         this.users = await idbAll('users');
-        this.expenses = (await idbAll('expenses')) || [];
         const metaRows = await idbAll('meta');
         this.meta = (metaRows[0] && metaRows[0].value) || {};
       } else {
         this.students = JSON.parse(LS.getItem('akb_students') || '[]');
         this.payments = JSON.parse(LS.getItem('akb_payments') || '[]');
         this.users = JSON.parse(LS.getItem('akb_users') || '[]');
-        this.expenses = JSON.parse(LS.getItem('akb_expenses') || '[]');
         this.meta = JSON.parse(LS.getItem('akb_meta') || '{}');
       }
     },
@@ -766,105 +610,6 @@
         .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
     },
 
-    /* ---- expenses (admin/account only) ---- */
-    expenseCats() {
-      const m = this.meta.expenseCats;
-      return (Array.isArray(m) && m.length) ? m : DEFAULT_EXPENSE_CATS.map(c => Object.assign({}, c));
-    },
-    _expenseCatList() { // the mutable, persisted list (seed from defaults on first use)
-      if (!Array.isArray(this.meta.expenseCats) || !this.meta.expenseCats.length) this.meta.expenseCats = this.expenseCats();
-      return this.meta.expenseCats;
-    },
-    expenseCat(key) { return this.expenseCats().find(c => c.key === key) || null; },
-    async addExpenseCat(label, business) {
-      label = String(label || '').trim(); if (!label) throw new Error('Category name is required');
-      const list = this._expenseCatList();
-      if (list.some(c => c.label.toLowerCase() === label.toLowerCase())) throw new Error('That category already exists');
-      const biz = BUSINESSES[business] ? business : 'school';
-      let base = slugKey(label), k = base, i = 2; while (list.some(c => c.key === k)) k = base + '_' + (i++);
-      list.push({ key: k, label, business: biz });
-      await this.persist();
-      return k;
-    },
-    async renameExpenseCat(key, label, business) {
-      const c = this._expenseCatList().find(x => x.key === key); if (!c) return;
-      if (label != null) { label = String(label).trim(); if (label) c.label = label; }
-      if (business != null && BUSINESSES[business]) c.business = business;
-      await this.persist();
-    },
-    async removeExpenseCat(key) {
-      this.meta.expenseCats = this._expenseCatList().filter(c => c.key !== key);
-      await this.persist();
-    },
-    // Sub-categories (bill item / purpose) — flat list of labels.
-    expenseItems() {
-      const m = this.meta.expenseItems;
-      return (Array.isArray(m) && m.length) ? m.slice() : DEFAULT_EXPENSE_ITEMS.slice();
-    },
-    _expenseItemList() {
-      if (!Array.isArray(this.meta.expenseItems) || !this.meta.expenseItems.length) this.meta.expenseItems = this.expenseItems();
-      return this.meta.expenseItems;
-    },
-    async addExpenseItem(label) {
-      label = String(label || '').trim(); if (!label) throw new Error('Sub-category name is required');
-      const list = this._expenseItemList();
-      const existing = list.find(x => x.toLowerCase() === label.toLowerCase());
-      if (existing) return existing; // already there (case-insensitive)
-      list.push(label);
-      list.sort((a, b) => a.localeCompare(b));
-      await this.persist();
-      return label;
-    },
-    async removeExpenseItem(label) {
-      this.meta.expenseItems = this._expenseItemList().filter(x => x.toLowerCase() !== String(label).toLowerCase());
-      await this.persist();
-    },
-    async addExpense(e) {
-      const amount = Math.round((Number(e.amount) || 0) * 100) / 100;
-      if (!(amount > 0)) throw new Error('Enter a valid amount');
-      const cat = this.expenseCat(e.category);
-      const business = BUSINESSES[e.business] ? e.business : (cat ? cat.business : 'school');
-      const item = String(e.item || '').trim();
-      if (item) { const list = this._expenseItemList(); if (!list.some(x => x.toLowerCase() === item.toLowerCase())) { list.push(item); list.sort((a, b) => a.localeCompare(b)); } }
-      const rec = {
-        id: U.uid(),
-        date: e.date || U.todayISO(),
-        category: e.category || (cat ? cat.key : ''),
-        categoryLabel: cat ? cat.label : (e.categoryLabel || ''),
-        item,
-        business, businessName: (BUSINESSES[business] || {}).name || '',
-        billNo: String(e.billNo || '').trim(),
-        reference: String(e.reference || '').trim(),
-        payee: String(e.payee || '').trim(),
-        mode: e.mode || 'Cash',
-        note: String(e.note || '').trim(),
-        amount,
-        createdAt: new Date().toISOString(),
-        createdBy: (this.currentUser && this.currentUser.username) || ''
-      };
-      this.expenses.push(rec);
-      await this.persist();
-      return rec;
-    },
-    async updateExpense(id, patch) {
-      const e = this.expenses.find(x => x.id === id); if (!e) return;
-      if (patch.date != null) e.date = patch.date;
-      if (patch.category != null) { const c = this.expenseCat(patch.category); e.category = patch.category; if (c) e.categoryLabel = c.label; }
-      if (patch.item != null) { const it = String(patch.item).trim(); e.item = it; if (it) { const list = this._expenseItemList(); if (!list.some(x => x.toLowerCase() === it.toLowerCase())) { list.push(it); list.sort((a, b) => a.localeCompare(b)); } } }
-      if (patch.business != null && BUSINESSES[patch.business]) { e.business = patch.business; e.businessName = BUSINESSES[patch.business].name; }
-      if (patch.billNo != null) e.billNo = String(patch.billNo).trim();
-      if (patch.reference != null) e.reference = String(patch.reference).trim();
-      if (patch.payee != null) e.payee = String(patch.payee).trim();
-      if (patch.mode != null) e.mode = patch.mode;
-      if (patch.note != null) e.note = String(patch.note).trim();
-      if (patch.amount != null) { const a = Math.round((Number(patch.amount) || 0) * 100) / 100; if (a > 0) e.amount = a; }
-      await this.persist();
-    },
-    async deleteExpense(id) {
-      this.expenses = this.expenses.filter(e => e.id !== id);
-      await this.persist();
-    },
-
     /* ---- students: add ---- */
     suggestId() {
       const nums = this.students.map(s => String(s.id).replace(/\D/g, '')).filter(Boolean);
@@ -1010,43 +755,10 @@
       });
       await this.persist();
     },
-    // Students absent on a date (optionally within a grade). A class marked as a
-    // holiday has no absentees for that date.
+    // Students absent on a date (optionally within a grade).
     absenteesOn(date, grade) {
       const day = this.getAttendance(date);
-      return this.students.filter(s => (!grade || s.grade === grade) && !this.isHoliday(date, s.grade) && day[s.id] === 'A');
-    },
-
-    /* ---- holidays (meta.holidays = { 'YYYY-MM-DD': ['__ALL__' | grade, ...] }) ----
-     * A holiday means no school that day, so no present/absent is taken and the
-     * day is left out of attendance reports. It can cover the whole school
-     * ('__ALL__') or specific class(es). */
-    HOLIDAY_ALL: '__ALL__',
-    isHoliday(date, grade) {
-      const arr = (this.meta.holidays || {})[date];
-      if (!Array.isArray(arr) || !arr.length) return false;
-      if (arr.indexOf('__ALL__') >= 0) return true;
-      return grade != null && arr.indexOf(grade) >= 0;
-    },
-    // Grades marked holiday on a date ('__ALL__' means the whole school).
-    holidaysOn(date) {
-      const arr = (this.meta.holidays || {})[date];
-      return Array.isArray(arr) ? arr.slice() : [];
-    },
-    async setHoliday(date, grade, on) {
-      if (!this.meta.holidays) this.meta.holidays = {};
-      const token = grade || '__ALL__';
-      let arr = Array.isArray(this.meta.holidays[date]) ? this.meta.holidays[date].slice() : [];
-      if (token === '__ALL__' && on) {
-        arr = ['__ALL__'];                                   // whole-school holiday supersedes per-class
-      } else if (on) {
-        if (arr.indexOf('__ALL__') >= 0) arr = [];           // moving off a whole-school holiday to specific classes
-        if (arr.indexOf(token) < 0) arr.push(token);
-      } else {
-        arr = arr.filter(x => x !== token);
-      }
-      if (arr.length) this.meta.holidays[date] = arr; else delete this.meta.holidays[date];
-      await this.persist();
+      return this.students.filter(s => (!grade || s.grade === grade) && day[s.id] === 'A');
     },
     // list of grades present in the roster, in a sensible order
     // (kindergarten first, then numeric/Roman-numeral grades in order, sections after)
@@ -1087,7 +799,7 @@
         const salt = randSalt();
         this.users.push({
           username: d.username, role: d.role, name: d.name,
-          salt, hash: await pbkdf(d.pass, salt), hashFb: fbHash(d.pass, salt), mustChange: true,
+          salt, hash: await pbkdf(d.pass, salt), mustChange: true,
           createdAt: new Date().toISOString()
         });
       }
@@ -1097,24 +809,15 @@
     async verifyLogin(username, password) {
       const u = this.getUser(username);
       if (!u) return null;
-      // Accept a match against either the strong (PBKDF2) hash or the salted
-      // fallback, and against this device's own computed hash whatever context
-      // it is in — so a server-provisioned login works even where Web Crypto is
-      // unavailable, and a fallback-created login still works on a secure device.
-      const primary = await pbkdf(password, u.salt);   // PBKDF2 on a secure context, else fallback
-      const fb = fbHash(password, u.salt);             // always the fallback form
-      const cands = [u.hash, u.hashFb].filter(Boolean);
-      return (cands.indexOf(primary) >= 0 || cands.indexOf(fb) >= 0) ? u : null;
+      const h = await pbkdf(password, u.salt);
+      return h === u.hash ? u : null;
     },
     async setPassword(username, password) {
       const u = this.getUser(username);
       if (!u) throw new Error('User not found');
       u.salt = randSalt();
       u.hash = await pbkdf(password, u.salt);
-      u.hashFb = fbHash(password, u.salt);   // so the login also works on devices without Web Crypto
       u.mustChange = false;
-      u.pwCustom = true;   // deliberately changed — the server must not reset it to a default
-      u.updatedAt = new Date().toISOString();
       await this.persistUsers();
     },
     async addUser({ username, role, name, password, grades, pages }) {
@@ -1125,10 +828,9 @@
       const salt = randSalt();
       const u = {
         username, role: normRole(role), name: name || username,
-        salt, hash: await pbkdf(password, salt), hashFb: fbHash(password, salt), mustChange: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+        salt, hash: await pbkdf(password, salt), mustChange: false, createdAt: new Date().toISOString()
       };
-      // Any non-admin user can be scoped to specific class(es); empty = all classes.
-      if (u.role !== 'admin') u.grades = Array.isArray(grades) ? grades.slice() : [];
+      if (u.role === 'teacher') u.grades = Array.isArray(grades) ? grades.slice() : [];
       // Store an explicit page list when given (unless admin, who always has all).
       if (u.role !== 'admin' && Array.isArray(pages)) u.pages = pages.filter(k => PAGE_KEYS.indexOf(k) >= 0);
       this.users.push(u);
@@ -1137,25 +839,21 @@
     async updateUserRole(username, role) {
       const u = this.getUser(username); if (!u) return;
       u.role = normRole(role);
-      // Keep any assigned class scope for non-admin roles; admin always sees all.
-      if (u.role === 'admin') delete u.grades;
-      else if (!Array.isArray(u.grades)) u.grades = [];
+      if (u.role === 'teacher') { if (!Array.isArray(u.grades)) u.grades = []; }
+      else delete u.grades;
       // Admin implies full access; drop any custom page list.
       if (u.role === 'admin') delete u.pages;
-      u.updatedAt = new Date().toISOString();
       await this.persistUsers();
     },
     async setUserGrades(username, grades) {
       const u = this.getUser(username); if (!u) return;
       u.grades = Array.isArray(grades) ? grades.slice() : [];
-      u.updatedAt = new Date().toISOString();
       await this.persistUsers();
     },
     async setUserPages(username, pages) {
       const u = this.getUser(username); if (!u) return;
       if (u.role === 'admin') { delete u.pages; }
       else u.pages = Array.isArray(pages) ? pages.filter(k => PAGE_KEYS.indexOf(k) >= 0) : [];
-      u.updatedAt = new Date().toISOString();
       await this.persistUsers();
     },
     // Effective page keys for a username (or the current user when omitted).
@@ -1178,18 +876,7 @@
       this.users = this.users.filter(u => u.username !== username);
       await this.persist();
     },
-    // User accounts must reach the shared server promptly and reliably, so
-    // (unlike the debounced fee-data sync) push immediately and wait for it.
-    async persistUsers() {
-      if (serverMode) {
-        this._mirrorLocal();
-        dirty = true;
-        if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
-        await this._syncNow();
-        return;
-      }
-      return this.persist();
-    },
+    async persistUsers() { return this.persist(); },
     // session (persisted so a refresh keeps you logged in on this device)
     setSession(u) {
       this.currentUser = u ? { username: u.username, role: u.role, name: u.name, grades: Array.isArray(u.grades) ? u.grades.slice() : undefined } : null;
@@ -1210,7 +897,7 @@
     /* ---- backup ---- */
     exportAll(includeUsers) {
       const o = { app: 'akb-fees', version: 2, exportedAt: new Date().toISOString(),
-        meta: this.meta, students: this.students, payments: this.payments, expenses: this.expenses };
+        meta: this.meta, students: this.students, payments: this.payments };
       if (includeUsers) o.users = this.users;
       return o;
     },
@@ -1218,7 +905,6 @@
       if (!obj || !Array.isArray(obj.students)) throw new Error('Invalid backup file');
       this.students = obj.students.map(normalizeStudent);
       this.payments = Array.isArray(obj.payments) ? obj.payments : [];
-      this.expenses = Array.isArray(obj.expenses) ? obj.expenses : [];
       this.meta = obj.meta || { seeded: true, receiptSeq: 0 };
       this.meta.seeded = true;
       if (Array.isArray(obj.users) && obj.users.length) this.users = obj.users;
@@ -1239,50 +925,6 @@
     (w.crypto || {}).getRandomValues ? w.crypto.getRandomValues(a) : a.forEach((_, i) => a[i] = (i * 131 + 7) & 255);
     return Array.from(a).map(b => b.toString(16).padStart(2, '0')).join('');
   }
-  // Deterministic salted fallback (FNV-1a) — last resort, kept only so any hash
-  // already stored in this form still verifies.
-  function fbHash(password, saltHex) {
-    let h = 2166136261 >>> 0; const str = saltHex + '|' + password;
-    for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
-    return 'fb' + h.toString(16);
-  }
-  /* Pure-JS PBKDF2-HMAC-SHA256 (dkLen 32) — byte-identical to Web Crypto / Node,
-     used when crypto.subtle is unavailable (insecure context) so EVERY account,
-     including ones hashed on another device, logs in anywhere. */
-  const _SHK = [0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2];
-  function _sha256(bytes) {
-    let h0 = 0x6a09e667, h1 = 0xbb67ae85, h2 = 0x3c6ef372, h3 = 0xa54ff53a, h4 = 0x510e527f, h5 = 0x9b05688c, h6 = 0x1f83d9ab, h7 = 0x5be0cd19;
-    const l = bytes.length, bitLen = l * 8, withOne = l + 1, total = withOne + 8, pad = (64 - (total % 64)) % 64, msg = new Uint8Array(withOne + pad + 8);
-    msg.set(bytes); msg[l] = 0x80;
-    const dv = msg.length, hi = Math.floor(bitLen / 0x100000000), lo = bitLen >>> 0;
-    msg[dv - 8] = (hi >>> 24) & 255; msg[dv - 7] = (hi >>> 16) & 255; msg[dv - 6] = (hi >>> 8) & 255; msg[dv - 5] = hi & 255;
-    msg[dv - 4] = (lo >>> 24) & 255; msg[dv - 3] = (lo >>> 16) & 255; msg[dv - 2] = (lo >>> 8) & 255; msg[dv - 1] = lo & 255;
-    const wv = new Uint32Array(64);
-    for (let off = 0; off < msg.length; off += 64) {
-      for (let i = 0; i < 16; i++) wv[i] = (msg[off + i * 4] << 24) | (msg[off + i * 4 + 1] << 16) | (msg[off + i * 4 + 2] << 8) | (msg[off + i * 4 + 3]);
-      for (let i = 16; i < 64; i++) { const s0 = ((wv[i - 15] >>> 7) | (wv[i - 15] << 25)) ^ ((wv[i - 15] >>> 18) | (wv[i - 15] << 14)) ^ (wv[i - 15] >>> 3); const s1 = ((wv[i - 2] >>> 17) | (wv[i - 2] << 15)) ^ ((wv[i - 2] >>> 19) | (wv[i - 2] << 13)) ^ (wv[i - 2] >>> 10); wv[i] = (wv[i - 16] + s0 + wv[i - 7] + s1) | 0; }
-      let a = h0, b = h1, c = h2, d = h3, e = h4, f = h5, g = h6, hh = h7;
-      for (let i = 0; i < 64; i++) { const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7)); const ch = (e & f) ^ ((~e) & g); const t1 = (hh + S1 + ch + _SHK[i] + wv[i]) | 0; const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10)); const maj = (a & b) ^ (a & c) ^ (b & c); const t2 = (S0 + maj) | 0; hh = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0; }
-      h0 = (h0 + a) | 0; h1 = (h1 + b) | 0; h2 = (h2 + c) | 0; h3 = (h3 + d) | 0; h4 = (h4 + e) | 0; h5 = (h5 + f) | 0; h6 = (h6 + g) | 0; h7 = (h7 + hh) | 0;
-    }
-    const out = new Uint8Array(32), hs = [h0, h1, h2, h3, h4, h5, h6, h7];
-    for (let i = 0; i < 8; i++) { out[i * 4] = (hs[i] >>> 24) & 255; out[i * 4 + 1] = (hs[i] >>> 16) & 255; out[i * 4 + 2] = (hs[i] >>> 8) & 255; out[i * 4 + 3] = hs[i] & 255; }
-    return out;
-  }
-  function _concat(a, b) { const c = new Uint8Array(a.length + b.length); c.set(a); c.set(b, a.length); return c; }
-  function _hmac256(key, msg) {
-    if (key.length > 64) key = _sha256(key);
-    const k = new Uint8Array(64); k.set(key); const ip = new Uint8Array(64), op = new Uint8Array(64);
-    for (let i = 0; i < 64; i++) { ip[i] = k[i] ^ 0x36; op[i] = k[i] ^ 0x5c; }
-    return _sha256(_concat(op, _sha256(_concat(ip, msg))));
-  }
-  function pbkdfJS(password, saltHex) {
-    const pw = new TextEncoder().encode(password);
-    const salt = Uint8Array.from(saltHex.match(/.{2}/g).map(h => parseInt(h, 16)));
-    let u = _hmac256(pw, _concat(salt, new Uint8Array([0, 0, 0, 1]))); const t = u.slice();
-    for (let i = 1; i < 100000; i++) { u = _hmac256(pw, u); for (let j = 0; j < 32; j++) t[j] ^= u[j]; }
-    return Array.from(t).map(b => b.toString(16).padStart(2, '0')).join('');
-  }
   async function pbkdf(password, saltHex) {
     try {
       const enc = new TextEncoder();
@@ -1291,9 +933,10 @@
       const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, key, 256);
       return Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('');
     } catch (e) {
-      // No Web Crypto (insecure context): compute the SAME PBKDF2 hash in pure JS
-      // so every account still logs in. FNV is only a last resort if even that fails.
-      try { return pbkdfJS(password, saltHex); } catch (e2) { return fbHash(password, saltHex); }
+      // fallback (non-crypto) — still salted; only used if Web Crypto is missing
+      let h = 2166136261 >>> 0; const str = saltHex + '|' + password;
+      for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+      return 'fb' + h.toString(16);
     }
   }
 
@@ -1323,7 +966,6 @@
         if (!d.objectStoreNames.contains('payments')) d.createObjectStore('payments', { keyPath: 'id' });
         if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta', { keyPath: 'id' });
         if (!d.objectStoreNames.contains('users')) d.createObjectStore('users', { keyPath: 'username' });
-        if (!d.objectStoreNames.contains('expenses')) d.createObjectStore('expenses', { keyPath: 'id' });
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);

@@ -30,18 +30,6 @@ button{font-family:inherit}
 .nav a.active{background:var(--primary);color:#fff}
 .sidebar-foot{padding:14px 16px;border-top:1px solid #1e293b}
 .year-badge{font-size:11px;color:#94a3b8}
-.sync-badge{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:600;margin-bottom:10px;padding:5px 9px;border-radius:8px;line-height:1.3}
-.sync-badge .dot{width:8px;height:8px;border-radius:50%;flex:0 0 8px}
-.sync-badge.ok{color:#bbf7d0;background:rgba(22,163,74,.15)}
-.sync-badge.ok .dot{background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.18)}
-.sync-badge.saving{color:#fde68a;background:rgba(217,119,6,.15)}
-.sync-badge.saving .dot{background:#f59e0b;animation:syncpulse 1s ease-in-out infinite}
-.sync-badge.offline{color:#fecaca;background:rgba(220,38,38,.15)}
-.sync-badge.offline .dot{background:#ef4444}
-@keyframes syncpulse{0%,100%{opacity:1}50%{opacity:.3}}
-.db-status.ok{color:var(--green)}
-.db-status.saving{color:var(--amber,#f59e0b)}
-.db-status.offline{color:var(--red)}
 
 /* Main */
 .main{flex:1;margin-left:230px;display:flex;flex-direction:column;min-width:0}
@@ -209,10 +197,6 @@ tbody tr.clickable{cursor:pointer}
 .login-card p{margin:2px 0 18px}
 .login-card .field{text-align:left}
 .login-card input{width:100%}
-.pw-wrap{position:relative}
-.pw-wrap input{width:100%;padding-right:44px}
-.pw-eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:18px;line-height:1;padding:6px;opacity:.65}
-.pw-eye:hover{opacity:1}
 .login-err{color:var(--red);font-size:13px;min-height:18px;margin-bottom:8px;text-align:left}
 .login-hint{margin-top:16px;font-size:11px;line-height:1.6}
 .login-hint code{background:#f1f5f9;padding:1px 5px;border-radius:4px}
@@ -257,10 +241,6 @@ h4.sec:first-child{margin-top:0}
 .att-btn:not(.on):hover{background:#f1f5f9}
 .att-btn + .att-btn{border-left:1px solid var(--border)}
 tr.row-absent{background:var(--red-l)}
-.holiday-banner{display:flex;align-items:center;gap:16px;flex-wrap:wrap;background:linear-gradient(90deg,#fff7ed,#fffbeb);border:1px solid #fcd9a8;border-radius:12px;padding:16px 18px}
-.holiday-banner .holiday-emoji{font-size:40px;line-height:1}
-.holiday-banner h2{font-size:18px}
-.holiday-banner .btn{margin-left:auto}
 
 /* marks grid */
 .marks-grid td,.marks-grid th{padding:6px 8px}

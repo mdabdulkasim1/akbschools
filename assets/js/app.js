@@ -56,7 +56,6 @@
         case 'business': setActive('dashboard'); Views.businessDashboard(decodeURIComponent(seg[1] || ''), params); break;
         case 'collect': setActive('collect'); Views.collect(); break;
         case 'collections': setActive('collections'); Views.collections(params); break;
-        case 'expenses': setActive('expenses'); Views.expenses(params); break;
         case 'reports': setActive('reports'); Views.reports(params); break;
         case 'attendance': setActive('attendance'); Views.attendance(params); break;
         case 'attreport': setActive('attreport'); Views.attReport(params); break;
@@ -97,23 +96,6 @@
       </div>`;
     document.getElementById('logoutBtn').onclick = () => Auth.logout();
     document.getElementById('changePw').onclick = () => Views.changePassword();
-    updateSyncBadge();
-  }
-
-  // Sidebar badge: is this device connected to the shared server, and is
-  // everything saved? Green = all saved · amber = saving · red = offline.
-  function updateSyncBadge() {
-    const el = document.getElementById('syncBadge');
-    const st = (Store.syncState && Store.syncState()) || 'saved';
-    const map = {
-      saved:   { cls: 'ok',      txt: 'All saved to server' },
-      saving:  { cls: 'saving',  txt: 'Saving…' },
-      offline: { cls: 'offline', txt: 'Offline — this device only' }
-    };
-    const m = map[st] || map.offline;
-    if (el) { el.className = 'sync-badge ' + m.cls; el.innerHTML = '<span class="dot"></span><span>' + m.txt + '</span>'; }
-    const dot = document.getElementById('dbStatus');
-    if (dot) { dot.className = 'db-status ' + m.cls; dot.title = m.txt; }
   }
 
   function wireGlobalSearch() {
@@ -141,33 +123,12 @@
     document.addEventListener('click', e => { if (!e.target.closest('.search-wrap')) box.classList.remove('open'); });
   }
 
-  // A newer app version is deployed — flush anything pending, then reload this
-  // tab so it stops running stale code (which could otherwise overwrite data).
-  let reloadingForBuild = false;
-  async function onNewBuild() {
-    if (reloadingForBuild) return; reloadingForBuild = true;
-    try { if (Store.flush) await Store.flush(); } catch (e) {}
-    const go = () => { try { location.reload(); } catch (e) {} };
-    const modalOpen = () => {
-      const mr = document.getElementById('modalRoot'); const ar = document.getElementById('authRoot');
-      return (mr && mr.innerHTML.trim()) || (ar && ar.innerHTML.trim());
-    };
-    try { U.toast('Updating to the latest version…', 'success'); } catch (e) {}
-    // Don't yank a modal/login out from under the user — wait until it's closed.
-    if (!modalOpen()) return setTimeout(go, 1200);
-    const t = setInterval(() => { if (!modalOpen()) { clearInterval(t); go(); } }, 1500);
-    setTimeout(go, 60000); // hard fallback
-  }
-
   let wired = false;
   function startApp() {
     applyRoleUI();
     if (!wired) {
       wireGlobalSearch();
       window.addEventListener('hashchange', route);
-      window.addEventListener('akb-sync', updateSyncBadge);
-      window.addEventListener('akb-newbuild', onNewBuild);
-      if (Store.startVersionWatch) Store.startVersionWatch();
       document.getElementById('hamburger').onclick = () => document.getElementById('sidebar').classList.toggle('open');
       wired = true;
     }
