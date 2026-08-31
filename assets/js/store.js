@@ -576,6 +576,17 @@
       // keep a running overall receipt count for stats
       this.meta.receiptSeq = (this.meta.receiptSeq || 0) + records.length;
 
+      if (serverMode) {
+        try {
+          await fetch('/api/payments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ records, student })
+          });
+        } catch (e) {}
+        await this.persist();
+        return records;
+      }
       await this.persist();
       return records; // array — one per business
     },
@@ -683,6 +694,17 @@
     async _saveFeeHeads() {
       this.meta.feeHeads = this.feeHeads;
       rebuildHeads(this.feeHeads);
+      if (serverMode && Array.isArray(this.feeHeads)) {
+        for (const fh of this.feeHeads) {
+          try {
+            await fetch('/api/fee-heads/' + encodeURIComponent(fh.key), {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(fh)
+            });
+          } catch (e) {}
+        }
+      }
       await this.persistMeta();
     },
     _slugKey(label) {
@@ -711,6 +733,11 @@
     async deleteFeeHead(key) {
       this.feeHeads = this.feeHeads.filter(h => h.key !== key);
       this.students.forEach(s => { delete s.fees[key]; });
+      if (serverMode) {
+        try {
+          await fetch('/api/fee-heads/' + encodeURIComponent(key), { method: 'DELETE' });
+        } catch (e) {}
+      }
       await this._saveFeeHeads(); await this.persistStudents();
     },
     async moveFeeHead(key, dir) {
@@ -848,12 +875,24 @@
       const h = await pbkdf(password, salt);
       return h === hash ? u : null;
     },
+    async _syncUser(u) {
+      if (serverMode && u && u.username) {
+        try {
+          await fetch('/api/users/' + encodeURIComponent(u.username), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(u)
+          });
+        } catch (e) {}
+      }
+    },
     async setPassword(username, password) {
       const u = this.getUser(username);
       if (!u) throw new Error('User not found');
       u.salt = randSalt();
       u.hash = await pbkdf(password, u.salt);
       u.mustChange = false;
+      await this._syncUser(u);
       await this.persistUsers();
     },
     async addUser({ username, role, name, password, grades, pages }) {
@@ -867,9 +906,9 @@
         salt, hash: await pbkdf(password, salt), mustChange: false, createdAt: new Date().toISOString()
       };
       if (u.role === 'teacher') u.grades = Array.isArray(grades) ? grades.slice() : [];
-      // Store an explicit page list when given (unless admin, who always has all).
       if (u.role !== 'admin' && Array.isArray(pages)) u.pages = pages.filter(k => PAGE_KEYS.indexOf(k) >= 0);
       this.users.push(u);
+      await this._syncUser(u);
       await this.persistUsers();
     },
     async updateUserRole(username, role) {
@@ -877,19 +916,21 @@
       u.role = normRole(role);
       if (u.role === 'teacher') { if (!Array.isArray(u.grades)) u.grades = []; }
       else delete u.grades;
-      // Admin implies full access; drop any custom page list.
       if (u.role === 'admin') delete u.pages;
+      await this._syncUser(u);
       await this.persistUsers();
     },
     async setUserGrades(username, grades) {
       const u = this.getUser(username); if (!u) return;
       u.grades = Array.isArray(grades) ? grades.slice() : [];
+      await this._syncUser(u);
       await this.persistUsers();
     },
     async setUserPages(username, pages) {
       const u = this.getUser(username); if (!u) return;
       if (u.role === 'admin') { delete u.pages; }
       else u.pages = Array.isArray(pages) ? pages.filter(k => PAGE_KEYS.indexOf(k) >= 0) : [];
+      await this._syncUser(u);
       await this.persistUsers();
     },
     // Effective page keys for a username (or the current user when omitted).
@@ -910,6 +951,13 @@
       const target = this.getUser(username);
       if (target && target.role === 'admin' && admins.length <= 1) throw new Error('Cannot delete the last admin');
       this.users = this.users.filter(u => u.username !== username);
+      if (serverMode) {
+        try {
+          await fetch('/api/users/' + encodeURIComponent(username), { method: 'DELETE' });
+        } catch (e) {}
+        await this.persist();
+        return;
+      }
       await this.persist();
     },
     async persistUsers() { return this.persist(); },

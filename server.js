@@ -563,6 +563,143 @@ const server = http.createServer(async (req, res) => {
       }
       return sendJSON(res, 200, { ok: true, version: DB.version });
     }
+    if (url.startsWith('/api/payments') && req.method === 'POST') {
+      const body = JSON.parse(await readBody(req));
+      const records = Array.isArray(body && body.records) ? body.records : [body];
+      for (const rec of records) {
+        if (!rec || !rec.receiptNo) continue;
+        if (!Array.isArray(DB.state.payments)) DB.state.payments = [];
+        const idx = DB.state.payments.findIndex(x => (x.id === rec.id || x.receiptNo === rec.receiptNo));
+        if (idx >= 0) DB.state.payments[idx] = rec; else DB.state.payments.push(rec);
+      }
+      if (body.student && body.student.id) {
+        const s = body.student;
+        if (!Array.isArray(DB.state.students)) DB.state.students = [];
+        const idx = DB.state.students.findIndex(x => x.id === s.id);
+        if (idx >= 0) DB.state.students[idx] = s;
+      }
+      DB.version++;
+      await saveDB();
+
+      if (hasMySQL()) {
+        const p = getPool();
+        if (p) {
+          for (const rec of records) {
+            if (!rec || !rec.receiptNo) continue;
+            const itemsJson = JSON.stringify(rec.items || []);
+            await p.query(
+              `INSERT INTO payments (receipt_no, date, business_name, student_id, student_name, grade, mode, amount, items_json, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+               ON DUPLICATE KEY UPDATE
+                 date=VALUES(date), business_name=VALUES(business_name), student_id=VALUES(student_id), student_name=VALUES(student_name),
+                 grade=VALUES(grade), mode=VALUES(mode), amount=VALUES(amount), items_json=VALUES(items_json)`,
+              [rec.receiptNo, rec.date || '', rec.businessName || '', rec.studentId || '', rec.studentName || '', rec.grade || '', rec.mode || '', Number(rec.amount) || 0, itemsJson]
+            ).catch(err => console.warn('[Direct Payment MySQL Insert Warn]', err.message));
+
+            if (Array.isArray(rec.items)) {
+              for (const item of rec.items) {
+                await p.query(
+                  `INSERT INTO payment_items (receipt_no, head_key, head_label, business_name, amount)
+                   VALUES (?, ?, ?, ?, ?)`,
+                  [rec.receiptNo, item.head || item.headKey || '', item.label || '', rec.businessName || '', Number(item.amount) || 0]
+                ).catch(() => {});
+              }
+            }
+          }
+        }
+      }
+      return sendJSON(res, 200, { ok: true, version: DB.version });
+    }
+    if (url.startsWith('/api/users') && (req.method === 'POST' || req.method === 'PUT')) {
+      const body = JSON.parse(await readBody(req));
+      const u = body.user || body;
+      if (u && u.username) {
+        if (!Array.isArray(DB.state.users)) DB.state.users = [];
+        const idx = DB.state.users.findIndex(x => x.username.toLowerCase() === u.username.toLowerCase());
+        if (idx >= 0) DB.state.users[idx] = u; else DB.state.users.push(u);
+        DB.version++;
+        await saveDB();
+
+        if (hasMySQL()) {
+          const p = getPool();
+          if (p) {
+            const pwd = u.salt ? `${u.salt}:${u.hash}` : (u.passwordHash || u.hash || u.password || 'admin@123');
+            await p.query(
+              `INSERT INTO users (username, password_hash, role, name, created_at)
+               VALUES (?, ?, ?, ?, NOW())
+               ON DUPLICATE KEY UPDATE
+                 password_hash=VALUES(password_hash), role=VALUES(role), name=VALUES(name)`,
+              [u.username, pwd, u.role || 'account', u.name || u.username]
+            ).catch(err => console.warn('[Direct User MySQL Update Warn]', err.message));
+          }
+        }
+      }
+      return sendJSON(res, 200, { ok: true, version: DB.version });
+    }
+    if (url.startsWith('/api/users/') && req.method === 'DELETE') {
+      const username = decodeURIComponent(url.slice('/api/users/'.length));
+      if (username) {
+        if (Array.isArray(DB.state.users)) {
+          const idx = DB.state.users.findIndex(x => x.username.toLowerCase() === username.toLowerCase());
+          if (idx >= 0) DB.state.users.splice(idx, 1);
+        }
+        DB.version++;
+        await saveDB();
+
+        if (hasMySQL()) {
+          const p = getPool();
+          if (p) {
+            await p.query('DELETE FROM users WHERE username = ?', [username]).catch(err => console.warn('[Direct User MySQL Delete Warn]', err.message));
+          }
+        }
+      }
+      return sendJSON(res, 200, { ok: true, version: DB.version });
+    }
+    if (url.startsWith('/api/fee-heads') && (req.method === 'POST' || req.method === 'PUT')) {
+      const body = JSON.parse(await readBody(req));
+      const fh = body.feeHead || body;
+      if (fh && fh.key) {
+        if (!DB.state.meta) DB.state.meta = {};
+        if (!Array.isArray(DB.state.meta.feeHeads)) DB.state.meta.feeHeads = [];
+        const idx = DB.state.meta.feeHeads.findIndex(x => x.key === fh.key);
+        if (idx >= 0) DB.state.meta.feeHeads[idx] = fh; else DB.state.meta.feeHeads.push(fh);
+        DB.version++;
+        await saveDB();
+
+        if (hasMySQL()) {
+          const p = getPool();
+          if (p) {
+            await p.query(
+              `INSERT INTO fee_heads (head_key, label, business, created_at)
+               VALUES (?, ?, ?, NOW())
+               ON DUPLICATE KEY UPDATE
+                 label=VALUES(label), business=VALUES(business)`,
+              [fh.key, fh.label || fh.key, fh.business || 'school']
+            ).catch(err => console.warn('[Direct FeeHead MySQL Update Warn]', err.message));
+          }
+        }
+      }
+      return sendJSON(res, 200, { ok: true, version: DB.version });
+    }
+    if (url.startsWith('/api/fee-heads/') && req.method === 'DELETE') {
+      const key = decodeURIComponent(url.slice('/api/fee-heads/'.length));
+      if (key) {
+        if (DB.state.meta && Array.isArray(DB.state.meta.feeHeads)) {
+          const idx = DB.state.meta.feeHeads.findIndex(x => x.key === key);
+          if (idx >= 0) DB.state.meta.feeHeads.splice(idx, 1);
+        }
+        DB.version++;
+        await saveDB();
+
+        if (hasMySQL()) {
+          const p = getPool();
+          if (p) {
+            await p.query('DELETE FROM fee_heads WHERE head_key = ?', [key]).catch(err => console.warn('[Direct FeeHead MySQL Delete Warn]', err.message));
+          }
+        }
+      }
+      return sendJSON(res, 200, { ok: true, version: DB.version });
+    }
     if (url === '/api/backup-status' && req.method === 'GET')
       return sendJSON(res, 200, { serverMode: true, mysql: hasMySQL(), emailConfigured: emailConfigured(), to: BACKUP_EMAIL, day: BACKUP_DAY, hour: BACKUP_HOUR, lastBackupAt: DB.lastBackupAt, excel: !!ExcelJS, dataDir: DATA_DIR, version: DB.version, students: (DB.state.students || []).length, payments: (DB.state.payments || []).length, bootAt: BOOT_AT });
     if (url === '/api/backup.xlsx' && req.method === 'GET') {
