@@ -201,8 +201,9 @@ async function loadDBFromMySQL() {
 
 async function saveDBToMySQL(state) {
   const p = getPool();
-  if (!p) return;
+  if (!p || !state) return;
   try {
+    // 1. Sync Payments
     if (Array.isArray(state.payments)) {
       for (const pm of state.payments) {
         const receiptNo = pm.receiptNo || pm.id;
@@ -212,7 +213,7 @@ async function saveDBToMySQL(state) {
           `INSERT INTO payments (receipt_no, date, business_name, student_id, student_name, grade, mode, amount, items_json, created_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
            ON DUPLICATE KEY UPDATE
-             date=VALUES(date), business_name=VALUES(business_name), student_name=VALUES(student_name),
+             date=VALUES(date), business_name=VALUES(business_name), student_id=VALUES(student_id), student_name=VALUES(student_name),
              grade=VALUES(grade), mode=VALUES(mode), amount=VALUES(amount), items_json=VALUES(items_json)`,
           [receiptNo, pm.date || '', pm.businessName || '', pm.studentId || '', pm.studentName || '', pm.grade || '', pm.mode || '', Number(pm.amount) || 0, itemsJson]
         );
@@ -222,13 +223,14 @@ async function saveDBToMySQL(state) {
             await p.query(
               `INSERT INTO payment_items (receipt_no, head_key, head_label, business_name, amount)
                VALUES (?, ?, ?, ?, ?)`,
-              [receiptNo, item.headKey || item.key || '', item.label || '', pm.businessName || '', Number(item.amount) || 0]
+              [receiptNo, item.headKey || item.key || item.head || '', item.label || '', pm.businessName || '', Number(item.amount) || 0]
             ).catch(() => {});
           }
         }
       }
     }
 
+    // 2. Sync Students and Fee Balances
     if (Array.isArray(state.students)) {
       for (const s of state.students) {
         if (!s.id) continue;
@@ -236,8 +238,11 @@ async function saveDBToMySQL(state) {
           `INSERT INTO students (id, name, grade, class_teacher, gender, father, mother, contact, religion, location, drop_location, transport_type, vehicle, status, discount, admission, sports_activity, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
            ON DUPLICATE KEY UPDATE
-             name=VALUES(name), grade=VALUES(grade), class_teacher=VALUES(class_teacher), contact=VALUES(contact),
-             status=VALUES(status), discount=VALUES(discount), updated_at=NOW()`,
+             name=VALUES(name), grade=VALUES(grade), class_teacher=VALUES(class_teacher), gender=VALUES(gender),
+             father=VALUES(father), mother=VALUES(mother), contact=VALUES(contact), religion=VALUES(religion),
+             location=VALUES(location), drop_location=VALUES(drop_location), transport_type=VALUES(transport_type),
+             vehicle=VALUES(vehicle), status=VALUES(status), discount=VALUES(discount), admission=VALUES(admission),
+             sports_activity=VALUES(sports_activity), updated_at=NOW()`,
           [s.id, s.name || '', s.grade || '', s.classTeacher || null, s.gender || null, s.father || null, s.mother || null, s.contact || null, s.religion || null, s.location || null, s.dropLocation || null, s.transportType || null, s.vehicle || null, s.status || 'active', Number(s.discount) || 0, s.admission || 'NEW', s.sportsActivity || null]
         );
 
@@ -257,6 +262,35 @@ async function saveDBToMySQL(state) {
             );
           }
         }
+      }
+    }
+
+    // 3. Sync Users
+    if (Array.isArray(state.users)) {
+      for (const u of state.users) {
+        if (!u.username) continue;
+        const pwd = u.salt ? `${u.salt}:${u.hash}` : (u.passwordHash || u.hash || u.password || 'admin@123');
+        await p.query(
+          `INSERT INTO users (username, password_hash, role, name, created_at)
+           VALUES (?, ?, ?, ?, NOW())
+           ON DUPLICATE KEY UPDATE
+             password_hash=VALUES(password_hash), role=VALUES(role), name=VALUES(name)`,
+          [u.username, pwd, u.role || 'account', u.name || u.username]
+        );
+      }
+    }
+
+    // 4. Sync Fee Heads
+    if (state.meta && Array.isArray(state.meta.feeHeads)) {
+      for (const fh of state.meta.feeHeads) {
+        if (!fh.key) continue;
+        await p.query(
+          `INSERT INTO fee_heads (head_key, label, business, created_at)
+           VALUES (?, ?, ?, NOW())
+           ON DUPLICATE KEY UPDATE
+             label=VALUES(label), business=VALUES(business)`,
+          [fh.key, fh.label || fh.key, fh.business || 'school']
+        );
       }
     }
   } catch (err) {

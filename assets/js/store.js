@@ -201,7 +201,7 @@
     async init() {
       // Prefer shared server state (all devices see one dataset)
       try {
-        const r = await fetch('api/state', { cache: 'no-store' });
+        const r = await fetch('/api/state', { cache: 'no-store' });
         if (r.ok) { serverMode = true; this._applyServer(await r.json()); }
       } catch (e) { serverMode = false; }
 
@@ -246,7 +246,7 @@
         const beacon = () => {
           if (!serverMode || !dirty) return;
           try {
-            fetch('api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, keepalive: true, body: JSON.stringify({ baseVersion, state: this._snapshot() }) }).then(() => { dirty = false; }).catch(() => {});
+            fetch('/api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, keepalive: true, body: JSON.stringify({ baseVersion, state: this._snapshot() }) }).then(() => { dirty = false; }).catch(() => {});
           } catch (e) {}
         };
         window.addEventListener('pagehide', beacon);
@@ -304,7 +304,7 @@
       if (syncing) { syncAgain = true; return; }
       syncing = true;
       try {
-        const r = await fetch('api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ baseVersion, state: this._snapshot() }) });
+        const r = await fetch('/api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ baseVersion, state: this._snapshot() }) });
         if (r.status === 409) {
           this._applyServer(await r.json());
           U.toast('Reloaded latest data (another device was editing)', 'error');
