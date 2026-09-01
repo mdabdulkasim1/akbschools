@@ -727,7 +727,7 @@ function sendFile(filePath, res, onErr) {
     if (err) return onErr();
     const ext = path.extname(filePath).toLowerCase();
     const fresh = (ext === '.html' || ext === '.js' || ext === '.css');
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': fresh ? 'no-cache' : 'public, max-age=86400' });
+    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': fresh ? 'no-cache, no-store, must-revalidate' : 'public, max-age=86400' });
     res.end(data);
   });
 }
