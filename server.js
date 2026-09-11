@@ -20,6 +20,7 @@
  *   WhatsApp (see waSendOne): WA_PROVIDER/WA_TOKEN/WA_TEMPLATE/WA_PARAMS/...
  */
 'use strict';
+try { require('dotenv').config(); } catch (e) {}
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -184,7 +185,7 @@ async function loadDBFromMySQL() {
       business: fh.business
     }));
 
-    if (students.length > 0) {
+    if (students.length > 0 || payments.length > 0) {
       DB.state = {
         students,
         payments,
@@ -481,7 +482,12 @@ const server = http.createServer(async (req, res) => {
   if (!checkAuth(req)) return unauthorized(res);
   const url = (req.url || '/').split('?')[0];
   try {
-    if (url === '/api/state' && req.method === 'GET') return sendJSON(res, 200, DB);
+    if (url === '/api/state' && req.method === 'GET') {
+      if (hasMySQL()) {
+        try { await loadDBFromMySQL(); } catch (e) {}
+      }
+      return sendJSON(res, 200, DB);
+    }
     if (url === '/api/state' && req.method === 'PUT') {
       const body = JSON.parse(await readBody(req));
       if (body && body.state) {

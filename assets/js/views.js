@@ -1017,7 +1017,7 @@
   }
 
   /* -------------------------------------------------- Collections */
-  let colState = { from: '', to: '', business: '', mode: '' };
+  let colState = { from: '', to: '', business: '', mode: '', q: '' };
   function collections(params) {
     if (params && params.business != null) colState.business = params.business;
     const pays = Store.payments;
@@ -1030,16 +1030,34 @@
         <label class="muted">To <input type="date" id="cTo" value="${colState.to}"/></label>
         <select id="cBiz"><option value="">All businesses</option>${Store.BUSINESS_ORDER.map(b => `<option value="${b}"${colState.business === b ? ' selected' : ''}>${U.esc(Store.BUSINESSES[b].name)}</option>`).join('')}</select>
         <select id="cMode"><option value="">All modes</option>${Store.MODES.map(m => `<option${colState.mode === m ? ' selected' : ''}>${U.esc(m)}</option>`).join('')}</select>
+        <input type="text" id="cQuery" placeholder="Search student or receipt..." value="${U.esc(colState.q || '')}" style="width:180px"/>
+        <button class="btn primary sm" id="cSearch">🔍 Search</button>
         <button class="btn sm" id="cClear">Clear</button>
       </div></div></div>
       <div id="colContent"></div>`;
     function isCash(m) { return m === 'Cash'; }
+    async function applySearch() {
+      const btn = $('#cSearch');
+      if (btn) { btn.disabled = true; btn.textContent = '⌛ Searching…'; }
+      try { await Store.refresh(); } catch (e) {}
+      if (btn) { btn.disabled = false; btn.textContent = '🔍 Search'; }
+      colState.from = $('#cFrom').value;
+      colState.to = $('#cTo').value;
+      colState.business = $('#cBiz').value;
+      colState.mode = $('#cMode').value;
+      colState.q = ($('#cQuery').value || '').trim().toLowerCase();
+      render();
+    }
     function render() {
       const list = Store.payments.filter(p => {
         if (colState.from && p.date < colState.from) return false;
         if (colState.to && p.date > colState.to) return false;
         if (colState.business && (p.business || 'school') !== colState.business) return false;
         if (colState.mode && p.mode !== colState.mode) return false;
+        if (colState.q) {
+          const txt = (p.studentName + ' ' + (p.studentId || '') + ' ' + (p.receiptNo || '') + ' ' + (p.grade || '')).toLowerCase();
+          if (txt.indexOf(colState.q) < 0) return false;
+        }
         return true;
       }).sort((a, b) => a.date < b.date ? 1 : (a.date > b.date ? -1 : (a.createdAt < b.createdAt ? 1 : -1)));
       const total = list.reduce((a, p) => a + p.amount, 0);
@@ -1076,11 +1094,13 @@
       $$('[data-rcpt]').forEach(tr => tr.onclick = () => { const p = Store.payments.find(x => x.id === tr.dataset.rcpt); if (p) Receipt.open(p); });
       bindNav();
     }
-    $('#cFrom').onchange = e => { colState.from = e.target.value; render(); };
-    $('#cTo').onchange = e => { colState.to = e.target.value; render(); };
-    $('#cBiz').onchange = e => { colState.business = e.target.value; render(); };
-    $('#cMode').onchange = e => { colState.mode = e.target.value; render(); };
-    $('#cClear').onclick = () => { colState.business = ''; colState.mode = ''; collections(); };
+    $('#cSearch').onclick = () => applySearch();
+    $('#cQuery').onkeyup = e => { if (e.key === 'Enter') applySearch(); };
+    $('#cFrom').onchange = () => applySearch();
+    $('#cTo').onchange = () => applySearch();
+    $('#cBiz').onchange = () => applySearch();
+    $('#cMode').onchange = () => applySearch();
+    $('#cClear').onclick = () => { colState = { from: '', to: '', business: '', mode: '', q: '' }; collections(); };
     $('#expCol').onclick = () => {
       const list = Store.payments.filter(p => (!colState.from || p.date >= colState.from) && (!colState.to || p.date <= colState.to) && (!colState.business || (p.business || 'school') === colState.business) && (!colState.mode || p.mode === colState.mode));
       const rows = [['Date', 'Receipt', 'Business', 'Student ID', 'Student', 'Grade', 'For', 'Mode', 'Amount']];

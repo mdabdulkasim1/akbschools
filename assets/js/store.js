@@ -255,6 +255,19 @@
       return this;
     },
 
+    async refresh() {
+      try {
+        const r = await fetch('/api/state', { cache: 'no-store' });
+        if (r.ok) {
+          serverMode = true;
+          this._applyServer(await r.json());
+          this._mirrorLocal();
+          return true;
+        }
+      } catch (e) { serverMode = false; }
+      return false;
+    },
+
     /* ---- persistence (server if available, else IndexedDB/localStorage) ---- */
     _snapshot() { return { students: this.students, payments: this.payments, users: this.users, meta: this.meta }; },
     _applyServer(dbObj) {
