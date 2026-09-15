@@ -199,6 +199,9 @@ async function loadDBFromMySQL() {
     });
 
     const [usrRows] = await p.query('SELECT * FROM users');
+    const prevUsers = (DB.state && Array.isArray(DB.state.users)) ? DB.state.users : [];
+    const prevByName = {};
+    prevUsers.forEach(pu => { if (pu && pu.username) prevByName[String(pu.username).toLowerCase()] = pu; });
     const users = usrRows.map(u => {
       let salt = u.salt || '';
       let hash = u.hash || '';
@@ -217,10 +220,9 @@ async function loadDBFromMySQL() {
         try { grades = typeof u.grades_json === 'string' ? JSON.parse(u.grades_json) : u.grades_json; } catch(e) {}
       }
 
-      // Preserve in-memory pages/grades if DB column was empty
-      const existing = DB.state.users && DB.state.users.find(x => x.username.toLowerCase() === u.username.toLowerCase());
-      if (!pages && existing && Array.isArray(existing.pages)) pages = existing.pages;
-      if (!grades && existing && Array.isArray(existing.grades)) grades = existing.grades;
+      const prev = prevByName[String(u.username).toLowerCase()] || {};
+      if (!pages && Array.isArray(prev.pages)) pages = prev.pages.slice();
+      if (!grades && Array.isArray(prev.grades)) grades = prev.grades.slice();
 
       const obj = {
         username: u.username,
@@ -232,6 +234,9 @@ async function loadDBFromMySQL() {
       };
       if (Array.isArray(pages)) obj.pages = pages;
       if (Array.isArray(grades)) obj.grades = grades;
+      if (prev.mustChange !== undefined) obj.mustChange = prev.mustChange;
+      if (prev.pwCustom !== undefined) obj.pwCustom = prev.pwCustom;
+      if (prev.updatedAt) obj.updatedAt = prev.updatedAt;
       return obj;
     });
 
@@ -488,14 +493,127 @@ if (hasMySQL()) {
     const { setupDatabase } = require('./scripts/setup');
     setupDatabase()
       .then(() => loadDBFromMySQL())
+      .then(() => { if (ensureProvisionedUsers()) { saveDB(); return persistProvisionedUsersToMySQL(); } })
       .catch(err => {
         console.warn('[DB Auto-Setup Warn]', err.message);
-        loadDBFromMySQL();
+        loadDBFromMySQL().then(() => { if (ensureProvisionedUsers()) { saveDB(); return persistProvisionedUsersToMySQL(); } });
       });
   } catch (e) {
-    loadDBFromMySQL();
+    loadDBFromMySQL().then(() => { if (ensureProvisionedUsers()) { saveDB(); return persistProvisionedUsersToMySQL(); } });
   }
 }
+
+/* ---------------- guaranteed / server-managed logins ----------------
+ * The built-in accounts (admin/account/teacher/academic) must always exist and,
+ * for teacher/academic, always carry the right role, page access and all-class
+ * scope. They are (re)created on boot, restored on every save if deleted, and
+ * their access is enforced on load — so they never silently drift. Passwords a
+ * user deliberately changes (pwCustom) are preserved. */
+const _crypto = require('crypto');
+function makeCred(password) {
+  const salt = _crypto.randomBytes(16).toString('hex');
+  const hash = _crypto.pbkdf2Sync(String(password), Buffer.from(salt, 'hex'), 100000, 32, 'sha256').toString('hex');
+  return { salt, hash };
+}
+function verifyCred(password, u) {
+  try {
+    if (!u) return false;
+    let salt = u.salt, hash = u.hash;
+    if ((!salt || !hash) && u.passwordHash && String(u.passwordHash).indexOf(':') >= 0) {
+      const pr = String(u.passwordHash).split(':'); salt = pr[0]; hash = pr[1];
+    }
+    if (!salt || !hash) return false;
+    const h = _crypto.pbkdf2Sync(String(password), Buffer.from(String(salt), 'hex'), 100000, 32, 'sha256').toString('hex');
+    return h === hash;
+  } catch (e) { return false; }
+}
+function isStrongHash(h) { return typeof h === 'string' && /^[0-9a-f]{64}$/.test(h); }
+function setCred(u, password) { const c = makeCred(password); u.salt = c.salt; u.hash = c.hash; u.passwordHash = c.salt + ':' + c.hash; }
+
+const SEED = [
+  { username: 'admin', name: 'System Administrator', password: 'admin@123', role: 'admin' },
+  { username: 'account1', name: 'Accounts Manager 1', password: 'account1@123', role: 'account' },
+  { username: 'account2', name: 'Accounts Manager 2', password: 'account2@123', role: 'account' }
+];
+const PROVISIONED = [
+  { username: 'teacher', name: 'Teacher', password: 'teacher@123', role: 'teacher',
+    pages: ['dashboard', 'students', 'attendance', 'attreport', 'marks', 'reports'], allClasses: true },
+  { username: 'academic', name: 'Academic', password: 'academic@123', role: 'akbch_academics',
+    pages: ['attendance', 'attreport', 'marks', 'academics', 'data'], allClasses: true }
+];
+
+function ensureProvisionedUsers() {
+  const st = DB.state || (DB.state = { students: [], payments: [], users: [], meta: {} });
+  st.users = st.users || [];
+  const allGrades = () => Array.from(new Set((st.students || []).map(s => s && s.grade).filter(Boolean)));
+  const now = () => new Date().toISOString();
+  const eq = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => x === b[i]);
+  const sameSet = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.slice().sort().join('') === b.slice().sort().join('');
+  let changed = false;
+
+  SEED.forEach(def => {
+    const u = st.users.find(x => String(x.username).toLowerCase() === def.username);
+    if (!u) {
+      const nu = { username: def.username, name: def.name, role: def.role, mustChange: false, createdAt: now(), updatedAt: now() };
+      setCred(nu, def.password); st.users.push(nu); changed = true;
+      console.log('Provisioned seed "' + def.username + '".');
+    } else if (verifyCred(def.password, u)) {
+      if (!isStrongHash(u.hash)) { setCred(u, def.password); u.updatedAt = now(); changed = true; }
+      else if (!u.passwordHash && u.salt && u.hash) { u.passwordHash = u.salt + ':' + u.hash; changed = true; }
+    } else if (!u.pwCustom) {
+      setCred(u, def.password); u.role = def.role; u.mustChange = false; u.updatedAt = now(); changed = true;
+      console.log('Reset seed "' + def.username + '" to default password.');
+    } // else: a deliberately-changed password (pwCustom) — leave it.
+  });
+
+  PROVISIONED.forEach(def => {
+    const grades = def.allClasses ? allGrades() : [];
+    let u = st.users.find(x => String(x.username).toLowerCase() === def.username);
+    if (!u) {
+      u = { username: def.username, name: def.name, role: def.role, mustChange: false, grades: grades, pages: def.pages.slice(), createdAt: now(), updatedAt: now() };
+      setCred(u, def.password); st.users.push(u); changed = true;
+      console.log('Provisioned "' + def.username + '" login with ' + grades.length + ' classes.');
+    } else if (!verifyCred(def.password, u)) {
+      setCred(u, def.password); u.role = def.role; u.mustChange = false; u.grades = grades; u.pages = def.pages.slice(); u.updatedAt = now();
+      changed = true;
+      console.log('Reset "' + def.username + '" login to default password.');
+    } else {
+      if (!isStrongHash(u.hash)) { setCred(u, def.password); changed = true; }
+      else if (!u.passwordHash && u.salt && u.hash) { u.passwordHash = u.salt + ':' + u.hash; changed = true; }
+      // Enforce the managed role / pages / all-class scope.
+      if (u.role !== def.role) { u.role = def.role; changed = true; }
+      if (!eq(u.pages, def.pages)) { u.pages = def.pages.slice(); changed = true; }
+      if (def.allClasses && !sameSet(u.grades, grades)) { u.grades = grades; changed = true; }
+      if (changed) u.updatedAt = now();
+    }
+  });
+
+  return changed;
+}
+
+// Upsert the guaranteed accounts into MySQL so their credentials are durable.
+async function persistProvisionedUsersToMySQL() {
+  if (!hasMySQL()) return;
+  const p = getPool();
+  if (!p) return;
+  const managed = new Set([].concat(SEED, PROVISIONED).map(d => d.username));
+  const users = (DB.state && DB.state.users) || [];
+  for (const u of users) {
+    if (!managed.has(String(u.username).toLowerCase())) continue;
+    const pwd = u.salt ? `${u.salt}:${u.hash}` : (u.passwordHash || u.hash || 'admin@123');
+    try {
+      await p.query(
+        `INSERT INTO users (username, password_hash, role, name, created_at)
+         VALUES (?, ?, ?, ?, NOW())
+         ON DUPLICATE KEY UPDATE password_hash=VALUES(password_hash), role=VALUES(role), name=VALUES(name)`,
+        [u.username, pwd, u.role || 'account', u.name || u.username]
+      );
+    } catch (err) { console.warn('[Provision MySQL Upsert Warn]', err.message); }
+  }
+}
+
+// File-only mode (no MySQL): guarantee the built-in logins exist on boot.
+if (!hasMySQL()) { if (ensureProvisionedUsers()) saveDB(); }
 
 /* ---------------- helpers ---------------- */
 const MIME = {
@@ -664,16 +782,25 @@ const server = http.createServer(async (req, res) => {
       if (hasMySQL()) {
         try { await loadDBFromMySQL(); } catch (e) {}
       }
+      // Always guarantee the built-in logins exist and the managed teacher/
+      // academic accounts carry the correct role/pages/all-class scope.
+      if (ensureProvisionedUsers()) {
+        saveDB();
+        if (hasMySQL()) persistProvisionedUsersToMySQL().catch(() => {});
+      }
       return sendJSON(res, 200, DB);
     }
     if (url === '/api/state' && req.method === 'PUT') {
       const body = JSON.parse(await readBody(req));
       if (body && body.state) {
         DB.state = body.state;
+        // Restore/enforce the guaranteed logins so a deleted managed account
+        // (admin/account/teacher/academic) comes back immediately on save.
+        ensureProvisionedUsers();
         DB.version++;
         await saveDB();
         if (hasMySQL()) {
-          saveDBToMySQL(body.state).catch(err => console.warn('MySQL async save error:', err.message));
+          saveDBToMySQL(DB.state).catch(err => console.warn('MySQL async save error:', err.message));
         }
       }
       return sendJSON(res, 200, { version: DB.version });

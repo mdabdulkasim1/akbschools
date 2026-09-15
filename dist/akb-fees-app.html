@@ -242,6 +242,10 @@ h4.sec:first-child{margin-top:0}
 .att-btn:not(.on):hover{background:#f1f5f9}
 .att-btn + .att-btn{border-left:1px solid var(--border)}
 tr.row-absent{background:var(--red-l)}
+.holiday-banner{display:flex;align-items:center;gap:16px;flex-wrap:wrap;background:linear-gradient(90deg,#fff7ed,#fffbeb);border:1px solid #fcd9a8;border-radius:12px;padding:16px 18px}
+.holiday-banner .holiday-emoji{font-size:40px;line-height:1}
+.holiday-banner h2{font-size:18px}
+.holiday-banner .btn{margin-left:auto}
 
 /* marks grid */
 .marks-grid td,.marks-grid th{padding:6px 8px}
@@ -722,7 +726,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     async init() {
       // Prefer shared server state (all devices see one dataset)
       try {
-        const r = await fetch('api/state', { cache: 'no-store' });
+        const r = await fetch('/api/state', { cache: 'no-store' });
         if (r.ok) { serverMode = true; this._applyServer(await r.json()); }
       } catch (e) { serverMode = false; }
 
@@ -767,13 +771,26 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
         const beacon = () => {
           if (!serverMode || !dirty) return;
           try {
-            fetch('api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, keepalive: true, body: JSON.stringify({ baseVersion, state: this._snapshot() }) }).then(() => { dirty = false; }).catch(() => {});
+            fetch('/api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, keepalive: true, body: JSON.stringify({ baseVersion, state: this._snapshot() }) }).then(() => { dirty = false; }).catch(() => {});
           } catch (e) {}
         };
         window.addEventListener('pagehide', beacon);
         window.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') beacon(); });
       }
       return this;
+    },
+
+    async refresh() {
+      try {
+        const r = await fetch('/api/state', { cache: 'no-store' });
+        if (r.ok) {
+          serverMode = true;
+          this._applyServer(await r.json());
+          this._mirrorLocal();
+          return true;
+        }
+      } catch (e) { serverMode = false; }
+      return false;
     },
 
     /* ---- persistence (server if available, else IndexedDB/localStorage) ---- */
@@ -825,7 +842,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       if (syncing) { syncAgain = true; return; }
       syncing = true;
       try {
-        const r = await fetch('api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ baseVersion, state: this._snapshot() }) });
+        const r = await fetch('/api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ baseVersion, state: this._snapshot() }) });
         if (r.status === 409) {
           this._applyServer(await r.json());
           U.toast('Reloaded latest data (another device was editing)', 'error');
@@ -1097,6 +1114,17 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       // keep a running overall receipt count for stats
       this.meta.receiptSeq = (this.meta.receiptSeq || 0) + records.length;
 
+      if (serverMode) {
+        try {
+          await fetch('/api/payments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ records, student })
+          });
+        } catch (e) {}
+        await this.persist();
+        return records;
+      }
       await this.persist();
       return records; // array — one per business
     },
@@ -1123,7 +1151,15 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
         this.recompute(student);
       }
       this.payments.splice(idx, 1);
-      await this.persist();
+      if (serverMode) {
+        try {
+          await fetch('/api/payments/' + encodeURIComponent(rec.receiptNo || rec.id), { method: 'DELETE' });
+        } catch (e) {}
+        await this.persist();
+        return;
+      }
+      if (useIDB && db) await idbDelete('payments', rec.receiptNo || rec.id);
+      else LS.setItem('akb_payments', JSON.stringify(this.payments));
     },
 
     studentPayments(id) {
@@ -1196,6 +1232,17 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     async _saveFeeHeads() {
       this.meta.feeHeads = this.feeHeads;
       rebuildHeads(this.feeHeads);
+      if (serverMode && Array.isArray(this.feeHeads)) {
+        for (const fh of this.feeHeads) {
+          try {
+            await fetch('/api/fee-heads/' + encodeURIComponent(fh.key), {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(fh)
+            });
+          } catch (e) {}
+        }
+      }
       await this.persistMeta();
     },
     _slugKey(label) {
@@ -1224,6 +1271,11 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     async deleteFeeHead(key) {
       this.feeHeads = this.feeHeads.filter(h => h.key !== key);
       this.students.forEach(s => { delete s.fees[key]; });
+      if (serverMode) {
+        try {
+          await fetch('/api/fee-heads/' + encodeURIComponent(key), { method: 'DELETE' });
+        } catch (e) {}
+      }
       await this._saveFeeHeads(); await this.persistStudents();
     },
     async moveFeeHead(key, dir) {
@@ -1241,18 +1293,34 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       this.recompute(s);
       const i = this.students.findIndex(x => x.id === s.id);
       if (i < 0) this.students.push(s);
-      if (serverMode) { await this.persist(); return; }   // sync edits to the shared server
+      if (serverMode) {
+        try {
+          await fetch('/api/students/' + encodeURIComponent(s.id), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(s)
+          });
+        } catch (e) {}
+        await this.persist();
+        return;
+      }
       if (useIDB && db) await idbPut('students', s);
       else LS.setItem('akb_students', JSON.stringify(this.students));
     },
-    // Delete a student record. Past receipts are kept (they carry the student's
-    // name/grade) unless withPayments is true.
     async deleteStudent(id, withPayments) {
       const i = this.students.findIndex(s => s.id === id);
       if (i < 0) return;
       this.students.splice(i, 1);
       if (withPayments) this.payments = this.payments.filter(p => p.studentId !== id);
-      await this.persist();
+      if (serverMode) {
+        try {
+          await fetch('/api/students/' + encodeURIComponent(id), { method: 'DELETE' });
+        } catch (e) {}
+        await this.persist();
+        return;
+      }
+      if (useIDB && db) await idbDelete('students', id);
+      else LS.setItem('akb_students', JSON.stringify(this.students));
     },
 
     /* ---- attendance (meta.attendance = { 'YYYY-MM-DD': { studentId: 'P'|'A' } }) ---- */
@@ -1276,10 +1344,43 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       });
       await this.persist();
     },
-    // Students absent on a date (optionally within a grade).
+    // Students absent on a date (optionally within a grade). A class marked as a
+    // holiday has no absentees for that date.
     absenteesOn(date, grade) {
       const day = this.getAttendance(date);
-      return this.students.filter(s => (!grade || s.grade === grade) && day[s.id] === 'A');
+      return this.students.filter(s => (!grade || s.grade === grade) && !this.isHoliday(date, s.grade) && day[s.id] === 'A');
+    },
+
+    /* ---- holidays (meta.holidays = { 'YYYY-MM-DD': ['__ALL__' | grade, ...] }) ----
+     * A holiday means no school that day, so no present/absent is taken and the
+     * day is left out of attendance reports. It can cover the whole school
+     * ('__ALL__') or specific class(es). */
+    HOLIDAY_ALL: '__ALL__',
+    isHoliday(date, grade) {
+      const arr = (this.meta.holidays || {})[date];
+      if (!Array.isArray(arr) || !arr.length) return false;
+      if (arr.indexOf('__ALL__') >= 0) return true;
+      return grade != null && arr.indexOf(grade) >= 0;
+    },
+    // Grades marked holiday on a date ('__ALL__' means the whole school).
+    holidaysOn(date) {
+      const arr = (this.meta.holidays || {})[date];
+      return Array.isArray(arr) ? arr.slice() : [];
+    },
+    async setHoliday(date, grade, on) {
+      if (!this.meta.holidays) this.meta.holidays = {};
+      const token = grade || '__ALL__';
+      let arr = Array.isArray(this.meta.holidays[date]) ? this.meta.holidays[date].slice() : [];
+      if (token === '__ALL__' && on) {
+        arr = ['__ALL__'];                                   // whole-school holiday supersedes per-class
+      } else if (on) {
+        if (arr.indexOf('__ALL__') >= 0) arr = [];           // moving off whole-school to specific classes
+        if (arr.indexOf(token) < 0) arr.push(token);
+      } else {
+        arr = arr.filter(x => x !== token);
+      }
+      if (arr.length) this.meta.holidays[date] = arr; else delete this.meta.holidays[date];
+      await this.persist();
     },
     // list of grades present in the roster, in a sensible order
     // (kindergarten first, then numeric/Roman-numeral grades in order, sections after)
@@ -1326,12 +1427,35 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       }
       await this.persistUsers();
     },
-    getUser(username) { return this.users.find(u => u.username.toLowerCase() === String(username).toLowerCase()); },
+    getUser(username) { return this.users.find(u => u.username && u.username.toLowerCase() === String(username).toLowerCase()); },
     async verifyLogin(username, password) {
       const u = this.getUser(username);
       if (!u) return null;
-      const h = await pbkdf(password, u.salt);
-      return h === u.hash ? u : null;
+      let salt = u.salt;
+      let hash = u.hash;
+      if ((!salt || !hash) && u.passwordHash) {
+        if (u.passwordHash.indexOf(':') >= 0) {
+          const parts = u.passwordHash.split(':');
+          salt = parts[0];
+          hash = parts[1];
+        } else {
+          hash = u.passwordHash;
+        }
+      }
+      if (!salt) return null;
+      const h = await pbkdf(password, salt);
+      return h === hash ? u : null;
+    },
+    async _syncUser(u) {
+      if (serverMode && u && u.username) {
+        try {
+          await fetch('/api/users/' + encodeURIComponent(u.username), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(u)
+          });
+        } catch (e) {}
+      }
     },
     async setPassword(username, password) {
       const u = this.getUser(username);
@@ -1339,6 +1463,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       u.salt = randSalt();
       u.hash = await pbkdf(password, u.salt);
       u.mustChange = false;
+      await this._syncUser(u);
       await this.persistUsers();
     },
     async addUser({ username, role, name, password, grades, pages }) {
@@ -1352,9 +1477,9 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
         salt, hash: await pbkdf(password, salt), mustChange: false, createdAt: new Date().toISOString()
       };
       if (u.role === 'teacher') u.grades = Array.isArray(grades) ? grades.slice() : [];
-      // Store an explicit page list when given (unless admin, who always has all).
       if (u.role !== 'admin' && Array.isArray(pages)) u.pages = pages.filter(k => PAGE_KEYS.indexOf(k) >= 0);
       this.users.push(u);
+      await this._syncUser(u);
       await this.persistUsers();
     },
     async updateUserRole(username, role) {
@@ -1362,19 +1487,21 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       u.role = normRole(role);
       if (u.role === 'teacher') { if (!Array.isArray(u.grades)) u.grades = []; }
       else delete u.grades;
-      // Admin implies full access; drop any custom page list.
       if (u.role === 'admin') delete u.pages;
+      await this._syncUser(u);
       await this.persistUsers();
     },
     async setUserGrades(username, grades) {
       const u = this.getUser(username); if (!u) return;
       u.grades = Array.isArray(grades) ? grades.slice() : [];
+      await this._syncUser(u);
       await this.persistUsers();
     },
     async setUserPages(username, pages) {
       const u = this.getUser(username); if (!u) return;
       if (u.role === 'admin') { delete u.pages; }
       else u.pages = Array.isArray(pages) ? pages.filter(k => PAGE_KEYS.indexOf(k) >= 0) : [];
+      await this._syncUser(u);
       await this.persistUsers();
     },
     // Effective page keys for a username (or the current user when omitted).
@@ -1395,6 +1522,13 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       const target = this.getUser(username);
       if (target && target.role === 'admin' && admins.length <= 1) throw new Error('Cannot delete the last admin');
       this.users = this.users.filter(u => u.username !== username);
+      if (serverMode) {
+        try {
+          await fetch('/api/users/' + encodeURIComponent(username), { method: 'DELETE' });
+        } catch (e) {}
+        await this.persist();
+        return;
+      }
       await this.persist();
     },
     async persistUsers() { return this.persist(); },
@@ -2679,7 +2813,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
   }
 
   /* -------------------------------------------------- Collections */
-  let colState = { from: '', to: '', business: '', mode: '' };
+  let colState = { from: '', to: '', business: '', mode: '', q: '' };
   function collections(params) {
     if (params && params.business != null) colState.business = params.business;
     const pays = Store.payments;
@@ -2692,16 +2826,34 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
         <label class="muted">To <input type="date" id="cTo" value="${colState.to}"/></label>
         <select id="cBiz"><option value="">All businesses</option>${Store.BUSINESS_ORDER.map(b => `<option value="${b}"${colState.business === b ? ' selected' : ''}>${U.esc(Store.BUSINESSES[b].name)}</option>`).join('')}</select>
         <select id="cMode"><option value="">All modes</option>${Store.MODES.map(m => `<option${colState.mode === m ? ' selected' : ''}>${U.esc(m)}</option>`).join('')}</select>
+        <input type="text" id="cQuery" placeholder="Search student or receipt..." value="${U.esc(colState.q || '')}" style="width:180px"/>
+        <button class="btn primary sm" id="cSearch">🔍 Search</button>
         <button class="btn sm" id="cClear">Clear</button>
       </div></div></div>
       <div id="colContent"></div>`;
     function isCash(m) { return m === 'Cash'; }
+    async function applySearch() {
+      const btn = $('#cSearch');
+      if (btn) { btn.disabled = true; btn.textContent = '⌛ Searching…'; }
+      try { await Store.refresh(); } catch (e) {}
+      if (btn) { btn.disabled = false; btn.textContent = '🔍 Search'; }
+      colState.from = $('#cFrom').value;
+      colState.to = $('#cTo').value;
+      colState.business = $('#cBiz').value;
+      colState.mode = $('#cMode').value;
+      colState.q = ($('#cQuery').value || '').trim().toLowerCase();
+      render();
+    }
     function render() {
       const list = Store.payments.filter(p => {
         if (colState.from && p.date < colState.from) return false;
         if (colState.to && p.date > colState.to) return false;
         if (colState.business && (p.business || 'school') !== colState.business) return false;
         if (colState.mode && p.mode !== colState.mode) return false;
+        if (colState.q) {
+          const txt = (p.studentName + ' ' + (p.studentId || '') + ' ' + (p.receiptNo || '') + ' ' + (p.grade || '')).toLowerCase();
+          if (txt.indexOf(colState.q) < 0) return false;
+        }
         return true;
       }).sort((a, b) => a.date < b.date ? 1 : (a.date > b.date ? -1 : (a.createdAt < b.createdAt ? 1 : -1)));
       const total = list.reduce((a, p) => a + p.amount, 0);
@@ -2738,11 +2890,13 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       $$('[data-rcpt]').forEach(tr => tr.onclick = () => { const p = Store.payments.find(x => x.id === tr.dataset.rcpt); if (p) Receipt.open(p); });
       bindNav();
     }
-    $('#cFrom').onchange = e => { colState.from = e.target.value; render(); };
-    $('#cTo').onchange = e => { colState.to = e.target.value; render(); };
-    $('#cBiz').onchange = e => { colState.business = e.target.value; render(); };
-    $('#cMode').onchange = e => { colState.mode = e.target.value; render(); };
-    $('#cClear').onclick = () => { colState.business = ''; colState.mode = ''; collections(); };
+    $('#cSearch').onclick = () => applySearch();
+    $('#cQuery').onkeyup = e => { if (e.key === 'Enter') applySearch(); };
+    $('#cFrom').onchange = () => applySearch();
+    $('#cTo').onchange = () => applySearch();
+    $('#cBiz').onchange = () => applySearch();
+    $('#cMode').onchange = () => applySearch();
+    $('#cClear').onclick = () => { colState = { from: '', to: '', business: '', mode: '', q: '' }; collections(); };
     $('#expCol').onclick = () => {
       const list = Store.payments.filter(p => (!colState.from || p.date >= colState.from) && (!colState.to || p.date <= colState.to) && (!colState.business || (p.business || 'school') === colState.business) && (!colState.mode || p.mode === colState.mode));
       const rows = [['Date', 'Receipt', 'Business', 'Student ID', 'Student', 'Grade', 'For', 'Mode', 'Amount']];
@@ -3536,6 +3690,8 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     const roster = Store.students.filter(s => s.grade === attState.grade)
       .sort((a, b) => String(a.name).localeCompare(String(b.name)));
     const day = Store.getAttendance(attState.date);
+    const holiday = Store.isHoliday(attState.date, attState.grade);
+    const wholeHoliday = Store.holidaysOn(attState.date).indexOf(Store.HOLIDAY_ALL) >= 0;
     let present = 0, absent = 0, unmarked = 0;
     roster.forEach(s => { const v = day[s.id]; if (v === 'P') present++; else if (v === 'A') absent++; else unmarked++; });
 
@@ -3555,18 +3711,21 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
         <td class="t-right">${wa}</td></tr>`;
     }).join('') || '<tr><td colspan="3" class="empty">No students in this class.</td></tr>';
 
-    view().innerHTML = `
-      <div class="page-head">
-        <div><h1>Attendance</h1><p>Mark each student, then WhatsApp the parents of absentees</p></div>
-      </div>
-      <div class="panel"><div class="panel-head">
-        <div class="toolbar">
-          <label class="fld"><span>Date</span><input type="date" id="attDate" value="${attState.date}" max="${U.todayISO()}"/></label>
-          <label class="fld"><span>Class</span><select id="attGrade">${gradeOpts}</select></label>
-          <button class="btn" id="attAllPresent">✔ Mark all present</button>
+    // Holiday banner replaces the roster when the class/date is a holiday.
+    const holidayBody = `
+      <div class="panel-body pad">
+        <div class="holiday-banner">
+          <div class="holiday-emoji">🏖️</div>
+          <div>
+            <h2 style="margin:0 0 4px">Holiday — no school${wholeHoliday ? ' (all classes)' : ' for ' + U.esc(attState.grade)}</h2>
+            <p class="muted" style="margin:0">No attendance is taken for ${wholeHoliday ? 'any class' : U.esc(attState.grade)} on ${U.fmtDate(attState.date)}. This day is left out of attendance reports.</p>
+          </div>
+          <button class="btn ${wholeHoliday ? '' : 'danger'}" id="attUnHoliday"${wholeHoliday ? ' disabled title="Marked as a whole-school holiday — remove it with the button below."' : ''}>Undo holiday</button>
         </div>
-        <span class="muted">${U.fmtDate(attState.date)}</span>
-      </div>
+        ${wholeHoliday ? '<div style="margin-top:10px"><button class="btn sm danger" id="attUnHolidayAll">Undo holiday (all classes)</button></div>' : ''}
+      </div>`;
+
+    const normalBody = `
       <div class="cards" style="margin:12px">
         ${kpi('Students', roster.length, { accent: 'blue' })}
         ${kpi('Present', present, { accent: 'green' })}
@@ -3575,12 +3734,32 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       </div>
       <div class="table-scroll"><table>
         <thead><tr><th>Student</th><th class="t-center">Attendance</th><th class="t-right">Absent action</th></tr></thead>
-        <tbody>${rows}</tbody></table></div></div>
-      ${isAdmin ? adminAbsenteePanel(attState.date) : ''}`;
+        <tbody>${rows}</tbody></table></div>`;
+
+    view().innerHTML = `
+      <div class="page-head">
+        <div><h1>Attendance</h1><p>Mark each student, then WhatsApp the parents of absentees</p></div>
+      </div>
+      <div class="panel"><div class="panel-head">
+        <div class="toolbar">
+          <label class="fld"><span>Date</span><input type="date" id="attDate" value="${attState.date}" max="${U.todayISO()}"/></label>
+          <label class="fld"><span>Class</span><select id="attGrade">${gradeOpts}</select></label>
+          ${holiday ? '' : `<button class="btn" id="attAllPresent">✔ Mark all present</button>
+          <button class="btn" id="attHoliday" title="No school for ${U.esc(attState.grade)} on this date">🏖️ Mark as Holiday</button>
+          <button class="btn" id="attHolidayAll" title="No school for every class on this date">🏖️ Holiday · all classes</button>`}
+        </div>
+        <span class="muted">${U.fmtDate(attState.date)}</span>
+      </div>
+      ${holiday ? holidayBody : normalBody}</div>
+      ${isAdmin && !wholeHoliday ? adminAbsenteePanel(attState.date) : ''}`;
 
     $('#attDate').onchange = e => { attState.date = e.target.value || U.todayISO(); attendance(); };
     $('#attGrade').onchange = e => { attState.grade = e.target.value; attendance(); };
-    $('#attAllPresent').onclick = async () => { await Store.markAllPresent(attState.date, attState.grade); U.toast('All marked present', 'success'); attendance(); };
+    const ap = $('#attAllPresent'); if (ap) ap.onclick = async () => { await Store.markAllPresent(attState.date, attState.grade); U.toast('All marked present', 'success'); attendance(); };
+    const hb = $('#attHoliday'); if (hb) hb.onclick = async () => { await Store.setHoliday(attState.date, attState.grade, true); U.toast('Marked ' + attState.grade + ' as holiday', 'success'); attendance(); };
+    const hba = $('#attHolidayAll'); if (hba) hba.onclick = async () => { await Store.setHoliday(attState.date, Store.HOLIDAY_ALL, true); U.toast('Marked holiday for all classes', 'success'); attendance(); };
+    const uh = $('#attUnHoliday'); if (uh) uh.onclick = async () => { await Store.setHoliday(attState.date, attState.grade, false); U.toast('Holiday removed', 'success'); attendance(); };
+    const uha = $('#attUnHolidayAll'); if (uha) uha.onclick = async () => { await Store.setHoliday(attState.date, Store.HOLIDAY_ALL, false); U.toast('Holiday removed for all classes', 'success'); attendance(); };
     $$('[data-att]').forEach(b => b.onclick = async () => {
       await Store.setAttendance(attState.date, b.dataset.id, b.dataset.att);
       attendance();
@@ -3947,6 +4126,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
 
     let P = 0, Aa = 0; dates.forEach(d => { const day = att[d] || {}; students.forEach(s => { const v = day[s.id]; if (v === 'P') P++; else if (v === 'A') Aa++; }); });
     const marked = P + Aa, pct = marked ? Math.round(P / marked * 100) : 0;
+    const holidayDates = Object.keys(Store.meta.holidays || {}).filter(d => d.slice(0, 7) === ym && (Store.holidaysOn(d) || []).length).sort();
 
     const classRows = grades.map(g => {
       const inG = students.filter(s => s.grade === g); let p = 0, a = 0;
@@ -3967,6 +4147,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
         ${kpi('Avg attendance', pct + '%', { accent: pct >= 75 ? 'green' : 'amber' })}
         ${kpi('Total present', P, { accent: 'green' })}
         ${kpi('Total absent', Aa, { accent: Aa ? 'red' : 'green' })}
+        ${kpi('Holidays', holidayDates.length, { accent: holidayDates.length ? 'amber' : 'green', sub: holidayDates.length ? holidayDates.map(d => d.slice(8)).join(', ') : '—' })}
       </div>
       <div class="panel"><div class="panel-head"><h2>Attendance % by Class</h2><span class="muted">${fmtMonth(ym)}</span></div>
         <div class="panel-body pad">${classBars.length ? hbars(classBars, { pct: true }) : '<div class="empty">No attendance recorded for this month.</div>'}</div></div>
