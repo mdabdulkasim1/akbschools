@@ -819,10 +819,43 @@
       });
       await this.persist();
     },
-    // Students absent on a date (optionally within a grade).
+    // Students absent on a date (optionally within a grade). A class marked as a
+    // holiday has no absentees for that date.
     absenteesOn(date, grade) {
       const day = this.getAttendance(date);
-      return this.students.filter(s => (!grade || s.grade === grade) && day[s.id] === 'A');
+      return this.students.filter(s => (!grade || s.grade === grade) && !this.isHoliday(date, s.grade) && day[s.id] === 'A');
+    },
+
+    /* ---- holidays (meta.holidays = { 'YYYY-MM-DD': ['__ALL__' | grade, ...] }) ----
+     * A holiday means no school that day, so no present/absent is taken and the
+     * day is left out of attendance reports. It can cover the whole school
+     * ('__ALL__') or specific class(es). */
+    HOLIDAY_ALL: '__ALL__',
+    isHoliday(date, grade) {
+      const arr = (this.meta.holidays || {})[date];
+      if (!Array.isArray(arr) || !arr.length) return false;
+      if (arr.indexOf('__ALL__') >= 0) return true;
+      return grade != null && arr.indexOf(grade) >= 0;
+    },
+    // Grades marked holiday on a date ('__ALL__' means the whole school).
+    holidaysOn(date) {
+      const arr = (this.meta.holidays || {})[date];
+      return Array.isArray(arr) ? arr.slice() : [];
+    },
+    async setHoliday(date, grade, on) {
+      if (!this.meta.holidays) this.meta.holidays = {};
+      const token = grade || '__ALL__';
+      let arr = Array.isArray(this.meta.holidays[date]) ? this.meta.holidays[date].slice() : [];
+      if (token === '__ALL__' && on) {
+        arr = ['__ALL__'];                                   // whole-school holiday supersedes per-class
+      } else if (on) {
+        if (arr.indexOf('__ALL__') >= 0) arr = [];           // moving off whole-school to specific classes
+        if (arr.indexOf(token) < 0) arr.push(token);
+      } else {
+        arr = arr.filter(x => x !== token);
+      }
+      if (arr.length) this.meta.holidays[date] = arr; else delete this.meta.holidays[date];
+      await this.persist();
     },
     // list of grades present in the roster, in a sensible order
     // (kindergarten first, then numeric/Roman-numeral grades in order, sections after)

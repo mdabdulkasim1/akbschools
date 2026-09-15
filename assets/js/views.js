@@ -1894,6 +1894,8 @@
     const roster = Store.students.filter(s => s.grade === attState.grade)
       .sort((a, b) => String(a.name).localeCompare(String(b.name)));
     const day = Store.getAttendance(attState.date);
+    const holiday = Store.isHoliday(attState.date, attState.grade);
+    const wholeHoliday = Store.holidaysOn(attState.date).indexOf(Store.HOLIDAY_ALL) >= 0;
     let present = 0, absent = 0, unmarked = 0;
     roster.forEach(s => { const v = day[s.id]; if (v === 'P') present++; else if (v === 'A') absent++; else unmarked++; });
 
@@ -1913,18 +1915,21 @@
         <td class="t-right">${wa}</td></tr>`;
     }).join('') || '<tr><td colspan="3" class="empty">No students in this class.</td></tr>';
 
-    view().innerHTML = `
-      <div class="page-head">
-        <div><h1>Attendance</h1><p>Mark each student, then WhatsApp the parents of absentees</p></div>
-      </div>
-      <div class="panel"><div class="panel-head">
-        <div class="toolbar">
-          <label class="fld"><span>Date</span><input type="date" id="attDate" value="${attState.date}" max="${U.todayISO()}"/></label>
-          <label class="fld"><span>Class</span><select id="attGrade">${gradeOpts}</select></label>
-          <button class="btn" id="attAllPresent">✔ Mark all present</button>
+    // Holiday banner replaces the roster when the class/date is a holiday.
+    const holidayBody = `
+      <div class="panel-body pad">
+        <div class="holiday-banner">
+          <div class="holiday-emoji">🏖️</div>
+          <div>
+            <h2 style="margin:0 0 4px">Holiday — no school${wholeHoliday ? ' (all classes)' : ' for ' + U.esc(attState.grade)}</h2>
+            <p class="muted" style="margin:0">No attendance is taken for ${wholeHoliday ? 'any class' : U.esc(attState.grade)} on ${U.fmtDate(attState.date)}. This day is left out of attendance reports.</p>
+          </div>
+          <button class="btn ${wholeHoliday ? '' : 'danger'}" id="attUnHoliday"${wholeHoliday ? ' disabled title="Marked as a whole-school holiday — remove it with the button below."' : ''}>Undo holiday</button>
         </div>
-        <span class="muted">${U.fmtDate(attState.date)}</span>
-      </div>
+        ${wholeHoliday ? '<div style="margin-top:10px"><button class="btn sm danger" id="attUnHolidayAll">Undo holiday (all classes)</button></div>' : ''}
+      </div>`;
+
+    const normalBody = `
       <div class="cards" style="margin:12px">
         ${kpi('Students', roster.length, { accent: 'blue' })}
         ${kpi('Present', present, { accent: 'green' })}
@@ -1933,12 +1938,32 @@
       </div>
       <div class="table-scroll"><table>
         <thead><tr><th>Student</th><th class="t-center">Attendance</th><th class="t-right">Absent action</th></tr></thead>
-        <tbody>${rows}</tbody></table></div></div>
-      ${isAdmin ? adminAbsenteePanel(attState.date) : ''}`;
+        <tbody>${rows}</tbody></table></div>`;
+
+    view().innerHTML = `
+      <div class="page-head">
+        <div><h1>Attendance</h1><p>Mark each student, then WhatsApp the parents of absentees</p></div>
+      </div>
+      <div class="panel"><div class="panel-head">
+        <div class="toolbar">
+          <label class="fld"><span>Date</span><input type="date" id="attDate" value="${attState.date}" max="${U.todayISO()}"/></label>
+          <label class="fld"><span>Class</span><select id="attGrade">${gradeOpts}</select></label>
+          ${holiday ? '' : `<button class="btn" id="attAllPresent">✔ Mark all present</button>
+          <button class="btn" id="attHoliday" title="No school for ${U.esc(attState.grade)} on this date">🏖️ Mark as Holiday</button>
+          <button class="btn" id="attHolidayAll" title="No school for every class on this date">🏖️ Holiday · all classes</button>`}
+        </div>
+        <span class="muted">${U.fmtDate(attState.date)}</span>
+      </div>
+      ${holiday ? holidayBody : normalBody}</div>
+      ${isAdmin && !wholeHoliday ? adminAbsenteePanel(attState.date) : ''}`;
 
     $('#attDate').onchange = e => { attState.date = e.target.value || U.todayISO(); attendance(); };
     $('#attGrade').onchange = e => { attState.grade = e.target.value; attendance(); };
-    $('#attAllPresent').onclick = async () => { await Store.markAllPresent(attState.date, attState.grade); U.toast('All marked present', 'success'); attendance(); };
+    const ap = $('#attAllPresent'); if (ap) ap.onclick = async () => { await Store.markAllPresent(attState.date, attState.grade); U.toast('All marked present', 'success'); attendance(); };
+    const hb = $('#attHoliday'); if (hb) hb.onclick = async () => { await Store.setHoliday(attState.date, attState.grade, true); U.toast('Marked ' + attState.grade + ' as holiday', 'success'); attendance(); };
+    const hba = $('#attHolidayAll'); if (hba) hba.onclick = async () => { await Store.setHoliday(attState.date, Store.HOLIDAY_ALL, true); U.toast('Marked holiday for all classes', 'success'); attendance(); };
+    const uh = $('#attUnHoliday'); if (uh) uh.onclick = async () => { await Store.setHoliday(attState.date, attState.grade, false); U.toast('Holiday removed', 'success'); attendance(); };
+    const uha = $('#attUnHolidayAll'); if (uha) uha.onclick = async () => { await Store.setHoliday(attState.date, Store.HOLIDAY_ALL, false); U.toast('Holiday removed for all classes', 'success'); attendance(); };
     $$('[data-att]').forEach(b => b.onclick = async () => {
       await Store.setAttendance(attState.date, b.dataset.id, b.dataset.att);
       attendance();
@@ -2305,6 +2330,7 @@
 
     let P = 0, Aa = 0; dates.forEach(d => { const day = att[d] || {}; students.forEach(s => { const v = day[s.id]; if (v === 'P') P++; else if (v === 'A') Aa++; }); });
     const marked = P + Aa, pct = marked ? Math.round(P / marked * 100) : 0;
+    const holidayDates = Object.keys(Store.meta.holidays || {}).filter(d => d.slice(0, 7) === ym && (Store.holidaysOn(d) || []).length).sort();
 
     const classRows = grades.map(g => {
       const inG = students.filter(s => s.grade === g); let p = 0, a = 0;
@@ -2325,6 +2351,7 @@
         ${kpi('Avg attendance', pct + '%', { accent: pct >= 75 ? 'green' : 'amber' })}
         ${kpi('Total present', P, { accent: 'green' })}
         ${kpi('Total absent', Aa, { accent: Aa ? 'red' : 'green' })}
+        ${kpi('Holidays', holidayDates.length, { accent: holidayDates.length ? 'amber' : 'green', sub: holidayDates.length ? holidayDates.map(d => d.slice(8)).join(', ') : '—' })}
       </div>
       <div class="panel"><div class="panel-head"><h2>Attendance % by Class</h2><span class="muted">${fmtMonth(ym)}</span></div>
         <div class="panel-body pad">${classBars.length ? hbars(classBars, { pct: true }) : '<div class="empty">No attendance recorded for this month.</div>'}</div></div>

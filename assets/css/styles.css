@@ -241,6 +241,10 @@ h4.sec:first-child{margin-top:0}
 .att-btn:not(.on):hover{background:#f1f5f9}
 .att-btn + .att-btn{border-left:1px solid var(--border)}
 tr.row-absent{background:var(--red-l)}
+.holiday-banner{display:flex;align-items:center;gap:16px;flex-wrap:wrap;background:linear-gradient(90deg,#fff7ed,#fffbeb);border:1px solid #fcd9a8;border-radius:12px;padding:16px 18px}
+.holiday-banner .holiday-emoji{font-size:40px;line-height:1}
+.holiday-banner h2{font-size:18px}
+.holiday-banner .btn{margin-left:auto}
 
 /* marks grid */
 .marks-grid td,.marks-grid th{padding:6px 8px}
