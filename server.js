@@ -259,8 +259,7 @@ async function loadDBFromMySQL() {
     const attendanceMap = {};
     for (const att of attRows) {
       if (!attendanceMap[att.date]) attendanceMap[att.date] = {};
-      if (!attendanceMap[att.date][att.grade]) attendanceMap[att.date][att.grade] = {};
-      attendanceMap[att.date][att.grade][att.student_id] = att.status;
+      attendanceMap[att.date][att.student_id] = att.status;
     }
 
     const meta = Object.assign({}, DB.state.meta || {}, settingsMap);
@@ -282,130 +281,194 @@ async function loadDBFromMySQL() {
   return false;
 }
 
-async function saveDBToMySQL(state) {
+function getActor(req, body) {
+  if (req && req.headers && req.headers['x-user-name']) return req.headers['x-user-name'];
+  if (body && body.currentUser && body.currentUser.username) return body.currentUser.username;
+  if (body && body.actor) return body.actor;
+  if (body && body.updatedBy) return body.updatedBy;
+  if (body && body.createdBy) return body.createdBy;
+  if (req && req.headers && req.headers['authorization']) {
+    try {
+      const h = req.headers['authorization'];
+      if (h.startsWith('Basic ')) {
+        const d = Buffer.from(h.slice(6), 'base64').toString('utf8');
+        return d.split(':')[0] || 'system';
+      }
+    } catch(e) {}
+  }
+  return 'system';
+}
+
+async function saveStudentInMySQL(p, s, stateMeta, actor) {
+  if (!p || !s || !s.id) return;
+  actor = actor || s.updatedBy || s.createdBy || 'system';
+
+  // 1. Guarantee Fee Heads exist first so foreign key constraint in student_fees never fails
+  const feeHeadsList = (stateMeta && Array.isArray(stateMeta.feeHeads) && stateMeta.feeHeads.length)
+    ? stateMeta.feeHeads
+    : DEFAULT_FEE_HEADS;
+
+  for (const fh of feeHeadsList) {
+    if (!fh.key) continue;
+    await p.query(
+      `INSERT INTO fee_heads (head_key, label, business, created_by, updated_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, NOW(), NOW())
+       ON DUPLICATE KEY UPDATE label=VALUES(label), business=VALUES(business), updated_by=VALUES(updated_by), updated_at=NOW()`,
+      [fh.key, fh.label || fh.key, fh.business || 'school', actor, actor]
+    ).catch(() => {});
+  }
+
+  // 2. Insert/Update Student record
+  await p.query(
+    `INSERT INTO students (id, name, grade, class_teacher, gender, dob, age, prev_school, father, mother, contact, religion, location, drop_location, transport_type, vehicle, status, discount, admission, sports_activity, photo, created_by, updated_by, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+     ON DUPLICATE KEY UPDATE
+       name=VALUES(name), grade=VALUES(grade), class_teacher=VALUES(class_teacher), gender=VALUES(gender),
+       dob=VALUES(dob), age=VALUES(age), prev_school=VALUES(prev_school), father=VALUES(father), mother=VALUES(mother),
+       contact=VALUES(contact), religion=VALUES(religion), location=VALUES(location), drop_location=VALUES(drop_location),
+       transport_type=VALUES(transport_type), vehicle=VALUES(vehicle), status=VALUES(status), discount=VALUES(discount),
+       admission=VALUES(admission), sports_activity=VALUES(sports_activity), photo=VALUES(photo), updated_by=VALUES(updated_by), updated_at=NOW()`,
+    [
+      s.id, s.name || '', s.grade || '', s.classTeacher || null, s.gender || null, s.dob || null, s.age || null, s.prevSchool || null,
+      s.father || null, s.mother || null, s.contact || null, s.religion || null, s.location || null, s.dropLocation || null,
+      s.transportType || null, s.vehicle || null, s.status || 'active', Number(s.discount) || 0, s.admission || 'NEW',
+      s.sportsActivity || null, s.photo || null, actor, actor
+    ]
+  );
+
+  // 3. Insert/Update Student Fee Heads
+  if (s.fees && typeof s.fees === 'object') {
+    for (const headKey of Object.keys(s.fees)) {
+      try {
+        const f = s.fees[headKey];
+        if (!f) continue;
+        const tot = typeof f === 'object' ? (Number(f.total) || 0) : (Number(f) || 0);
+        const pd = typeof f === 'object' ? (Number(f.paid) || 0) : 0;
+        const bal = typeof f === 'object' ? (Number(f.balance) || (tot - pd)) : tot;
+
+        await p.query(
+          `INSERT INTO fee_heads (head_key, label, business, created_by, updated_by, created_at, updated_at)
+           VALUES (?, ?, 'school', ?, ?, NOW(), NOW())
+           ON DUPLICATE KEY UPDATE label=VALUES(label), updated_by=VALUES(updated_by), updated_at=NOW()`,
+          [headKey, headKey, actor, actor]
+        ).catch(() => {});
+
+        await p.query(
+          `INSERT INTO student_fees (student_id, head_key, total_amount, paid_amount, balance_amount, created_by, updated_by, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+           ON DUPLICATE KEY UPDATE
+             total_amount=VALUES(total_amount), paid_amount=VALUES(paid_amount), balance_amount=VALUES(balance_amount), updated_by=VALUES(updated_by), updated_at=NOW()`,
+          [s.id, headKey, tot, pd, bal, actor, actor]
+        );
+      } catch (fe) {
+        console.warn('[MySQL Save Student Fee Warn]', s.id, headKey, fe.message);
+      }
+    }
+  }
+
+  // 4. Insert/Update Student Transport Monthly
+  if (s.transport && typeof s.transport === 'object') {
+    for (const mKey of Object.keys(s.transport)) {
+      const tr = s.transport[mKey];
+      if (!tr) continue;
+      await p.query(
+        `INSERT INTO student_transport_monthly (student_id, month_key, total_amount, paid_amount, balance_amount, created_by, updated_by, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+         ON DUPLICATE KEY UPDATE
+           total_amount=VALUES(total_amount), paid_amount=VALUES(paid_amount), balance_amount=VALUES(balance_amount), updated_by=VALUES(updated_by), updated_at=NOW()`,
+        [s.id, mKey, Number(tr.total) || 0, Number(tr.paid) || 0, Number(tr.balance) || 0, actor, actor]
+      ).catch(() => {});
+    }
+  }
+
+  // 5. Insert/Update Student Sub Fees
+  if (s.subs && typeof s.subs === 'object') {
+    for (const pHead of Object.keys(s.subs)) {
+      const bag = s.subs[pHead];
+      if (!bag || typeof bag !== 'object') continue;
+      for (const subKey of Object.keys(bag)) {
+        const sb = bag[subKey];
+        if (!sb) continue;
+        await p.query(
+          `INSERT INTO student_sub_fees (student_id, parent_head_key, sub_key, total_amount, paid_amount, balance_amount, created_by, updated_by, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+           ON DUPLICATE KEY UPDATE
+             total_amount=VALUES(total_amount), paid_amount=VALUES(paid_amount), balance_amount=VALUES(balance_amount), updated_by=VALUES(updated_by), updated_at=NOW()`,
+          [s.id, pHead, subKey, Number(sb.total) || 0, Number(sb.paid) || 0, Number(sb.balance) || 0, actor, actor]
+        ).catch(() => {});
+      }
+    }
+  }
+
+  // 6. Insert/Update Student Report Cards
+  if (s.report && typeof s.report === 'object') {
+    const reportJson = JSON.stringify(s.report);
+    await p.query(
+      `INSERT INTO report_cards (student_id, report_json, created_by, updated_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, NOW(), NOW())
+       ON DUPLICATE KEY UPDATE report_json=VALUES(report_json), updated_by=VALUES(updated_by), updated_at=NOW()`,
+      [s.id, reportJson, actor, actor]
+    ).catch(() => {});
+  }
+}
+
+async function saveDBToMySQL(state, actor) {
+  actor = actor || 'system';
   const p = getPool();
   if (!p || !state) return;
   try {
-    // 1. Sync Payments & Payment Items
+    // 1. Sync Fee Heads FIRST so foreign keys exist
+    if (state.meta && Array.isArray(state.meta.feeHeads)) {
+      for (const fh of state.meta.feeHeads) {
+        if (!fh.key) continue;
+        await p.query(
+          `INSERT INTO fee_heads (head_key, label, business, created_by, updated_by, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, NOW(), NOW())
+           ON DUPLICATE KEY UPDATE
+             label=VALUES(label), business=VALUES(business), updated_by=VALUES(updated_by), updated_at=NOW()`,
+          [fh.key, fh.label || fh.key, fh.business || 'school', actor, actor]
+        ).catch(() => {});
+      }
+    }
+
+    // 2. Sync Payments & Payment Items
     if (Array.isArray(state.payments)) {
       for (const pm of state.payments) {
         const receiptNo = pm.receiptNo || pm.id;
         if (!receiptNo) continue;
+        const pmActor = pm.createdBy || pm.updatedBy || actor;
         const itemsJson = JSON.stringify(pm.items || []);
         await p.query(
-          `INSERT INTO payments (receipt_no, date, business_name, student_id, student_name, grade, mode, amount, items_json, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+          `INSERT INTO payments (receipt_no, date, business_name, student_id, student_name, grade, mode, amount, items_json, created_by, updated_by, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
            ON DUPLICATE KEY UPDATE
              date=VALUES(date), business_name=VALUES(business_name), student_id=VALUES(student_id), student_name=VALUES(student_name),
-             grade=VALUES(grade), mode=VALUES(mode), amount=VALUES(amount), items_json=VALUES(items_json)`,
-          [receiptNo, pm.date || '', pm.businessName || '', pm.studentId || '', pm.studentName || '', pm.grade || '', pm.mode || '', Number(pm.amount) || 0, itemsJson]
+             grade=VALUES(grade), mode=VALUES(mode), amount=VALUES(amount), items_json=VALUES(items_json), updated_by=VALUES(updated_by), updated_at=NOW()`,
+          [receiptNo, pm.date || '', pm.businessName || '', pm.studentId || '', pm.studentName || '', pm.grade || '', pm.mode || '', Number(pm.amount) || 0, itemsJson, pmActor, pmActor]
         );
 
         if (Array.isArray(pm.items)) {
           for (const item of pm.items) {
             await p.query(
-              `INSERT INTO payment_items (receipt_no, head_key, head_label, business_name, amount)
-               VALUES (?, ?, ?, ?, ?)`,
-              [receiptNo, item.headKey || item.key || item.head || '', item.label || '', pm.businessName || '', Number(item.amount) || 0]
+              `INSERT INTO payment_items (receipt_no, head_key, head_label, business_name, amount, created_by, updated_by, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+               ON DUPLICATE KEY UPDATE head_label=VALUES(head_label), amount=VALUES(amount), updated_by=VALUES(updated_by), updated_at=NOW()`,
+              [receiptNo, item.headKey || item.key || item.head || '', item.label || '', pm.businessName || '', Number(item.amount) || 0, pmActor, pmActor]
             ).catch(() => {});
           }
         }
       }
     }
 
-    // 2. Sync Students, Fee Balances, Transport, Sub-Fees, and Report Cards
+    // 3. Sync Students
     if (Array.isArray(state.students)) {
       for (const s of state.students) {
         if (!s.id) continue;
-        try {
-          await p.query(
-            `INSERT INTO students (id, name, grade, class_teacher, gender, dob, age, prev_school, father, mother, contact, religion, location, drop_location, transport_type, vehicle, status, discount, admission, sports_activity, photo, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-             ON DUPLICATE KEY UPDATE
-               name=VALUES(name), grade=VALUES(grade), class_teacher=VALUES(class_teacher), gender=VALUES(gender),
-               dob=VALUES(dob), age=VALUES(age), prev_school=VALUES(prev_school), father=VALUES(father), mother=VALUES(mother),
-               contact=VALUES(contact), religion=VALUES(religion), location=VALUES(location), drop_location=VALUES(drop_location),
-               transport_type=VALUES(transport_type), vehicle=VALUES(vehicle), status=VALUES(status), discount=VALUES(discount),
-               admission=VALUES(admission), sports_activity=VALUES(sports_activity), photo=VALUES(photo), updated_at=NOW()`,
-            [
-              s.id, s.name || '', s.grade || '', s.classTeacher || null, s.gender || null, s.dob || null, s.age || null, s.prevSchool || null,
-              s.father || null, s.mother || null, s.contact || null, s.religion || null, s.location || null, s.dropLocation || null,
-              s.transportType || null, s.vehicle || null, s.status || 'active', Number(s.discount) || 0, s.admission || 'NEW',
-              s.sportsActivity || null, s.photo || null
-            ]
-          );
-
-          // Student Fee Heads
-          if (s.fees && typeof s.fees === 'object') {
-            for (const headKey of Object.keys(s.fees)) {
-              try {
-                const f = s.fees[headKey];
-                if (!f) continue;
-                const tot = typeof f === 'object' ? (Number(f.total) || 0) : (Number(f) || 0);
-                const pd = typeof f === 'object' ? (Number(f.paid) || 0) : 0;
-                const bal = typeof f === 'object' ? (Number(f.balance) || (tot - pd)) : tot;
-                await p.query(
-                  `INSERT INTO student_fees (student_id, head_key, total_amount, paid_amount, balance_amount, updated_at)
-                   VALUES (?, ?, ?, ?, ?, NOW())
-                   ON DUPLICATE KEY UPDATE
-                     total_amount=VALUES(total_amount), paid_amount=VALUES(paid_amount), balance_amount=VALUES(balance_amount), updated_at=NOW()`,
-                  [s.id, headKey, tot, pd, bal]
-                );
-              } catch (fe) {}
-            }
-          }
-
-          // Student Transport Monthly
-          if (s.transport && typeof s.transport === 'object') {
-            for (const mKey of Object.keys(s.transport)) {
-              const tr = s.transport[mKey];
-              if (!tr) continue;
-              await p.query(
-                `INSERT INTO student_transport_monthly (student_id, month_key, total_amount, paid_amount, balance_amount, updated_at)
-                 VALUES (?, ?, ?, ?, ?, NOW())
-                 ON DUPLICATE KEY UPDATE
-                   total_amount=VALUES(total_amount), paid_amount=VALUES(paid_amount), balance_amount=VALUES(balance_amount), updated_at=NOW()`,
-                [s.id, mKey, Number(tr.total) || 0, Number(tr.paid) || 0, Number(tr.balance) || 0]
-              ).catch(() => {});
-            }
-          }
-
-          // Student Sub Fees
-          if (s.subs && typeof s.subs === 'object') {
-            for (const pHead of Object.keys(s.subs)) {
-              const bag = s.subs[pHead];
-              if (!bag || typeof bag !== 'object') continue;
-              for (const subKey of Object.keys(bag)) {
-                const sb = bag[subKey];
-                if (!sb) continue;
-                await p.query(
-                  `INSERT INTO student_sub_fees (student_id, parent_head_key, sub_key, total_amount, paid_amount, balance_amount, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, NOW())
-                   ON DUPLICATE KEY UPDATE
-                     total_amount=VALUES(total_amount), paid_amount=VALUES(paid_amount), balance_amount=VALUES(balance_amount), updated_at=NOW()`,
-                  [s.id, pHead, subKey, Number(sb.total) || 0, Number(sb.paid) || 0, Number(sb.balance) || 0]
-                ).catch(() => {});
-              }
-            }
-          }
-
-          // Student Report Cards
-          if (s.report && typeof s.report === 'object') {
-            const reportJson = JSON.stringify(s.report);
-            await p.query(
-              `INSERT INTO report_cards (student_id, report_json, updated_at)
-               VALUES (?, ?, NOW())
-               ON DUPLICATE KEY UPDATE report_json=VALUES(report_json), updated_at=NOW()`,
-              [s.id, reportJson]
-            ).catch(() => {});
-          }
-        } catch (se) {
-          console.warn('[MySQL Save Student Warn]', s.id, se.message);
-        }
+        await saveStudentInMySQL(p, s, state.meta, actor);
       }
     }
 
-    // 3. Sync Users
+    // 4. Sync Users
     if (Array.isArray(state.users)) {
       for (const u of state.users) {
         if (!u.username) continue;
@@ -413,35 +476,22 @@ async function saveDBToMySQL(state) {
         const pagesJson = Array.isArray(u.pages) ? JSON.stringify(u.pages) : null;
         const gradesJson = Array.isArray(u.grades) ? JSON.stringify(u.grades) : null;
         await p.query(
-          `INSERT INTO users (username, password_hash, role, name, pages_json, grades_json, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, NOW())
+          `INSERT INTO users (username, password_hash, role, name, pages_json, grades_json, created_by, updated_by, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
            ON DUPLICATE KEY UPDATE
              password_hash=VALUES(password_hash), role=VALUES(role), name=VALUES(name),
              pages_json=COALESCE(VALUES(pages_json), pages_json),
-             grades_json=COALESCE(VALUES(grades_json), grades_json)`,
-          [u.username, pwd, u.role || 'account', u.name || u.username, pagesJson, gradesJson]
+             grades_json=COALESCE(VALUES(grades_json), grades_json),
+             updated_by=VALUES(updated_by), updated_at=NOW()`,
+          [u.username, pwd, u.role || 'account', u.name || u.username, pagesJson, gradesJson, actor, actor]
         ).catch(err => {
           return p.query(
-            `INSERT INTO users (username, password_hash, role, name, created_at)
-             VALUES (?, ?, ?, ?, NOW())
-             ON DUPLICATE KEY UPDATE password_hash=VALUES(password_hash), role=VALUES(role), name=VALUES(name)`,
-            [u.username, pwd, u.role || 'account', u.name || u.username]
+            `INSERT INTO users (username, password_hash, role, name, created_by, updated_by, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
+             ON DUPLICATE KEY UPDATE password_hash=VALUES(password_hash), role=VALUES(role), name=VALUES(name), updated_by=VALUES(updated_by), updated_at=NOW()`,
+            [u.username, pwd, u.role || 'account', u.name || u.username, actor, actor]
           );
         });
-      }
-    }
-
-    // 4. Sync Fee Heads
-    if (state.meta && Array.isArray(state.meta.feeHeads)) {
-      for (const fh of state.meta.feeHeads) {
-        if (!fh.key) continue;
-        await p.query(
-          `INSERT INTO fee_heads (head_key, label, business, created_at)
-           VALUES (?, ?, ?, NOW())
-           ON DUPLICATE KEY UPDATE
-             label=VALUES(label), business=VALUES(business)`,
-          [fh.key, fh.label || fh.key, fh.business || 'school']
-        );
       }
     }
 
@@ -449,37 +499,37 @@ async function saveDBToMySQL(state) {
     if (state.meta && state.meta.attendance && typeof state.meta.attendance === 'object') {
       const attObj = state.meta.attendance;
       for (const dKey of Object.keys(attObj)) {
-        const gradesBag = attObj[dKey];
-        if (!gradesBag || typeof gradesBag !== 'object') continue;
-        for (const gKey of Object.keys(gradesBag)) {
-          const stMap = gradesBag[gKey];
-          if (!stMap || typeof stMap !== 'object') continue;
-          for (const stId of Object.keys(stMap)) {
-            const stVal = stMap[stId];
-            if (!stVal) continue;
-            await p.query(
-              `INSERT INTO attendance (date, grade, student_id, status, updated_at)
-               VALUES (?, ?, ?, ?, NOW())
-               ON DUPLICATE KEY UPDATE status=VALUES(status), updated_at=NOW()`,
-              [dKey, gKey, stId, String(stVal)]
-            ).catch(() => {});
-          }
+        const stMap = attObj[dKey];
+        if (!stMap || typeof stMap !== 'object') continue;
+        for (const stId of Object.keys(stMap)) {
+          const stVal = stMap[stId];
+          if (!stVal) continue;
+          await p.query(
+            `INSERT INTO attendance (date, student_id, status, created_by, updated_by, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, NOW(), NOW())
+             ON DUPLICATE KEY UPDATE status=VALUES(status), updated_by=VALUES(updated_by), updated_at=NOW()`,
+            [dKey, stId, String(stVal), actor, actor]
+          ).catch(err => {
+            console.warn('[MySQL Save Attendance Warn]', dKey, stId, err.message);
+          });
         }
       }
     }
 
     // 6. Sync App Settings (meta)
     if (state.meta && typeof state.meta === 'object') {
-      const keysToSave = ['school', 'year', 'receiptSeq', 'subItems'];
-      for (const k of keysToSave) {
+      for (const k of Object.keys(state.meta)) {
+        if (k === 'attendance' || k === 'feeHeads') continue;
         if (state.meta[k] !== undefined) {
           const valStr = JSON.stringify(state.meta[k]);
           await p.query(
-            `INSERT INTO app_settings (setting_key, setting_value, updated_at)
-             VALUES (?, ?, NOW())
-             ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value), updated_at=NOW()`,
-            [k, valStr]
-          ).catch(() => {});
+            `INSERT INTO app_settings (setting_key, setting_value, created_by, updated_by, created_at, updated_at)
+             VALUES (?, ?, ?, ?, NOW(), NOW())
+             ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value), updated_by=VALUES(updated_by), updated_at=NOW()`,
+            [k, valStr, actor, actor]
+          ).catch(err => {
+            console.warn('[MySQL Save App Settings Warn]', k, err.message);
+          });
         }
       }
     }
@@ -792,21 +842,21 @@ const server = http.createServer(async (req, res) => {
     }
     if (url === '/api/state' && req.method === 'PUT') {
       const body = JSON.parse(await readBody(req));
+      const actor = getActor(req, body);
       if (body && body.state) {
         DB.state = body.state;
-        // Restore/enforce the guaranteed logins so a deleted managed account
-        // (admin/account/teacher/academic) comes back immediately on save.
         ensureProvisionedUsers();
         DB.version++;
         await saveDB();
         if (hasMySQL()) {
-          saveDBToMySQL(DB.state).catch(err => console.warn('MySQL async save error:', err.message));
+          saveDBToMySQL(DB.state, actor).catch(err => console.warn('MySQL async save error:', err.message));
         }
       }
       return sendJSON(res, 200, { version: DB.version });
     }
     if (url.startsWith('/api/students') && (req.method === 'PUT' || req.method === 'POST')) {
       const body = JSON.parse(await readBody(req));
+      const actor = getActor(req, body);
       const s = body.student || body;
       if (s && s.id) {
         if (!Array.isArray(DB.state.students)) DB.state.students = [];
@@ -818,17 +868,7 @@ const server = http.createServer(async (req, res) => {
         if (hasMySQL()) {
           const p = getPool();
           if (p) {
-            await p.query(
-              `INSERT INTO students (id, name, grade, class_teacher, gender, father, mother, contact, religion, location, drop_location, transport_type, vehicle, status, discount, admission, sports_activity, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-               ON DUPLICATE KEY UPDATE
-                 name=VALUES(name), grade=VALUES(grade), class_teacher=VALUES(class_teacher), gender=VALUES(gender),
-                 father=VALUES(father), mother=VALUES(mother), contact=VALUES(contact), religion=VALUES(religion),
-                 location=VALUES(location), drop_location=VALUES(drop_location), transport_type=VALUES(transport_type),
-                 vehicle=VALUES(vehicle), status=VALUES(status), discount=VALUES(discount), admission=VALUES(admission),
-                 sports_activity=VALUES(sports_activity), updated_at=NOW()`,
-              [s.id, s.name || '', s.grade || '', s.classTeacher || null, s.gender || null, s.father || null, s.mother || null, s.contact || null, s.religion || null, s.location || null, s.dropLocation || null, s.transportType || null, s.vehicle || null, s.status || 'active', Number(s.discount) || 0, s.admission || 'NEW', s.sportsActivity || null]
-            ).catch(err => console.warn('[Direct Student MySQL Update Warn]', err.message));
+            await saveStudentInMySQL(p, s, DB.state ? DB.state.meta : null, actor).catch(err => console.warn('[Direct Student MySQL Update Warn]', err.message));
           }
         }
       }
@@ -876,6 +916,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.startsWith('/api/payments') && req.method === 'POST') {
       const body = JSON.parse(await readBody(req));
+      const actor = getActor(req, body);
       const records = Array.isArray(body && body.records) ? body.records : [body];
       for (const rec of records) {
         if (!rec || !rec.receiptNo) continue;
@@ -899,20 +940,21 @@ const server = http.createServer(async (req, res) => {
             if (!rec || !rec.receiptNo) continue;
             const itemsJson = JSON.stringify(rec.items || []);
             await p.query(
-              `INSERT INTO payments (receipt_no, date, business_name, student_id, student_name, grade, mode, amount, items_json, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+              `INSERT INTO payments (receipt_no, date, business_name, student_id, student_name, grade, mode, amount, items_json, created_by, updated_by, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
                ON DUPLICATE KEY UPDATE
                  date=VALUES(date), business_name=VALUES(business_name), student_id=VALUES(student_id), student_name=VALUES(student_name),
-                 grade=VALUES(grade), mode=VALUES(mode), amount=VALUES(amount), items_json=VALUES(items_json)`,
-              [rec.receiptNo, rec.date || '', rec.businessName || '', rec.studentId || '', rec.studentName || '', rec.grade || '', rec.mode || '', Number(rec.amount) || 0, itemsJson]
+                 grade=VALUES(grade), mode=VALUES(mode), amount=VALUES(amount), items_json=VALUES(items_json), updated_by=VALUES(updated_by), updated_at=NOW()`,
+              [rec.receiptNo, rec.date || '', rec.businessName || '', rec.studentId || '', rec.studentName || '', rec.grade || '', rec.mode || '', Number(rec.amount) || 0, itemsJson, actor, actor]
             ).catch(err => console.warn('[Direct Payment MySQL Insert Warn]', err.message));
 
             if (Array.isArray(rec.items)) {
               for (const item of rec.items) {
                 await p.query(
-                  `INSERT INTO payment_items (receipt_no, head_key, head_label, business_name, amount)
-                   VALUES (?, ?, ?, ?, ?)`,
-                  [rec.receiptNo, item.head || item.headKey || '', item.label || '', rec.businessName || '', Number(item.amount) || 0]
+                  `INSERT INTO payment_items (receipt_no, head_key, head_label, business_name, amount, created_by, updated_by, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+                   ON DUPLICATE KEY UPDATE head_label=VALUES(head_label), amount=VALUES(amount), updated_by=VALUES(updated_by), updated_at=NOW()`,
+                  [rec.receiptNo, item.head || item.headKey || '', item.label || '', rec.businessName || '', Number(item.amount) || 0, actor, actor]
                 ).catch(() => {});
               }
             }
@@ -923,6 +965,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.startsWith('/api/users') && (req.method === 'POST' || req.method === 'PUT')) {
       const body = JSON.parse(await readBody(req));
+      const actor = getActor(req, body);
       const u = body.user || body;
       if (u && u.username) {
         if (!Array.isArray(DB.state.users)) DB.state.users = [];
@@ -938,18 +981,20 @@ const server = http.createServer(async (req, res) => {
             const pagesJson = Array.isArray(u.pages) ? JSON.stringify(u.pages) : null;
             const gradesJson = Array.isArray(u.grades) ? JSON.stringify(u.grades) : null;
             await p.query(
-              `INSERT INTO users (username, password_hash, role, name, pages_json, grades_json, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, NOW())
+              `INSERT INTO users (username, password_hash, role, name, pages_json, grades_json, created_by, updated_by, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
                ON DUPLICATE KEY UPDATE
                  password_hash=VALUES(password_hash), role=VALUES(role), name=VALUES(name),
-                 pages_json=VALUES(pages_json), grades_json=VALUES(grades_json)`,
-              [u.username, pwd, u.role || 'account', u.name || u.username, pagesJson, gradesJson]
+                 pages_json=COALESCE(VALUES(pages_json), pages_json),
+                 grades_json=COALESCE(VALUES(grades_json), grades_json),
+                 updated_by=VALUES(updated_by), updated_at=NOW()`,
+              [u.username, pwd, u.role || 'account', u.name || u.username, pagesJson, gradesJson, actor, actor]
             ).catch(err => {
               return p.query(
-                `INSERT INTO users (username, password_hash, role, name, created_at)
-                 VALUES (?, ?, ?, ?, NOW())
-                 ON DUPLICATE KEY UPDATE password_hash=VALUES(password_hash), role=VALUES(role), name=VALUES(name)`,
-                [u.username, pwd, u.role || 'account', u.name || u.username]
+                `INSERT INTO users (username, password_hash, role, name, created_by, updated_by, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
+                 ON DUPLICATE KEY UPDATE password_hash=VALUES(password_hash), role=VALUES(role), name=VALUES(name), updated_by=VALUES(updated_by), updated_at=NOW()`,
+                [u.username, pwd, u.role || 'account', u.name || u.username, actor, actor]
               );
             });
           }
@@ -978,6 +1023,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.startsWith('/api/fee-heads') && (req.method === 'POST' || req.method === 'PUT')) {
       const body = JSON.parse(await readBody(req));
+      const actor = getActor(req, body);
       const fh = body.feeHead || body;
       if (fh && fh.key) {
         if (!DB.state.meta) DB.state.meta = {};
@@ -991,11 +1037,11 @@ const server = http.createServer(async (req, res) => {
           const p = getPool();
           if (p) {
             await p.query(
-              `INSERT INTO fee_heads (head_key, label, business, created_at)
-               VALUES (?, ?, ?, NOW())
+              `INSERT INTO fee_heads (head_key, label, business, created_by, updated_by, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, NOW(), NOW())
                ON DUPLICATE KEY UPDATE
-                 label=VALUES(label), business=VALUES(business)`,
-              [fh.key, fh.label || fh.key, fh.business || 'school']
+                 label=VALUES(label), business=VALUES(business), updated_by=VALUES(updated_by), updated_at=NOW()`,
+              [fh.key, fh.label || fh.key, fh.business || 'school', actor, actor]
             ).catch(err => console.warn('[Direct FeeHead MySQL Update Warn]', err.message));
           }
         }

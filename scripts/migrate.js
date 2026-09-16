@@ -160,7 +160,27 @@ async function runMigrations() {
       const startTime = Date.now();
 
       try {
-        await db.query(sql);
+        const cleanSql = sql
+          .replace(/--.*$/gm, '')
+          .replace(/\/\*[\s\S]*?\*\//g, '');
+
+        const statements = cleanSql
+          .split(';')
+          .map(s => s.trim())
+          .filter(s => s.length > 0);
+
+        for (const stmt of statements) {
+          try {
+            await db.query(stmt);
+          } catch (stmtErr) {
+            if (stmtErr.errno === 1060 || stmtErr.code === 'ER_DUP_FIELDNAME') {
+              writeLog(`[INFO] Column already exists, skipped: ${stmtErr.message}`);
+            } else {
+              throw stmtErr;
+            }
+          }
+        }
+
         const duration = Date.now() - startTime;
         await db.query(
           `INSERT INTO migration_logs (version, name, status, execution_time_ms, message, executed_at) VALUES (?, ?, 'SUCCESS', ?, ?, NOW())`,
