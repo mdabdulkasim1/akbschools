@@ -2368,5 +2368,131 @@
     bindNav();
   }
 
-  w.Views = { dashboard, students, studentDetail, businessDashboard, collect, collections, reports, attendance, attReport, marks, academics, users, data, openPaymentModal, changePassword };
+  /* -------------------------------------------------- Audit Logs View */
+  let auditState = { search: '', entityType: '', action: '', limit: 100 };
+  async function audit(params) {
+    if (!Store.isAdmin()) {
+      view().innerHTML = `<div class="page-head"><div><h1>Audit Logs</h1></div></div><div class="panel"><div class="panel-body pad"><div class="empty">Access Restricted. Admins only.</div></div></div>`;
+      return;
+    }
+
+    view().innerHTML = `
+      <div class="page-head">
+        <div><h1>Audit Logs</h1><p>Track every system change, update, creation, and deletion across all tables</p></div>
+        <button class="btn primary" id="auditRefresh">🔄 Refresh Logs</button>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <div class="toolbar" style="flex-wrap:wrap">
+            <input type="search" id="auditSearch" placeholder="Search by ID, User, or Action..." value="${U.esc(auditState.search)}" style="min-width:220px;padding:7px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px" />
+            <label class="fld"><span>Entity</span>
+              <select id="auditEntityType">
+                <option value="">All Entities</option>
+                <option value="students"${auditState.entityType === 'students' ? ' selected' : ''}>Students</option>
+                <option value="payments"${auditState.entityType === 'payments' ? ' selected' : ''}>Payments</option>
+                <option value="attendance"${auditState.entityType === 'attendance' ? ' selected' : ''}>Attendance</option>
+                <option value="users"${auditState.entityType === 'users' ? ' selected' : ''}>Users</option>
+                <option value="holidays"${auditState.entityType === 'holidays' ? ' selected' : ''}>Holidays</option>
+                <option value="settings"${auditState.entityType === 'settings' ? ' selected' : ''}>Settings</option>
+                <option value="fee_heads"${auditState.entityType === 'fee_heads' ? ' selected' : ''}>Fee Heads</option>
+                <option value="report_cards"${auditState.entityType === 'report_cards' ? ' selected' : ''}>Report Cards</option>
+              </select>
+            </label>
+            <label class="fld"><span>Action</span>
+              <select id="auditAction">
+                <option value="">All Actions</option>
+                <option value="CREATE_STUDENT"${auditState.action === 'CREATE_STUDENT' ? ' selected' : ''}>CREATE_STUDENT</option>
+                <option value="UPDATE_STUDENT"${auditState.action === 'UPDATE_STUDENT' ? ' selected' : ''}>UPDATE_STUDENT</option>
+                <option value="DELETE_STUDENT"${auditState.action === 'DELETE_STUDENT' ? ' selected' : ''}>DELETE_STUDENT</option>
+                <option value="RECORD_PAYMENT"${auditState.action === 'RECORD_PAYMENT' ? ' selected' : ''}>RECORD_PAYMENT</option>
+                <option value="DELETE_PAYMENT"${auditState.action === 'DELETE_PAYMENT' ? ' selected' : ''}>DELETE_PAYMENT</option>
+                <option value="UPDATE_ATTENDANCE"${auditState.action === 'UPDATE_ATTENDANCE' ? ' selected' : ''}>UPDATE_ATTENDANCE</option>
+                <option value="CREATE_USER"${auditState.action === 'CREATE_USER' ? ' selected' : ''}>CREATE_USER</option>
+                <option value="UPDATE_USER"${auditState.action === 'UPDATE_USER' ? ' selected' : ''}>UPDATE_USER</option>
+                <option value="DELETE_USER"${auditState.action === 'DELETE_USER' ? ' selected' : ''}>DELETE_USER</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <div id="auditTableWrap" class="table-scroll"><div class="empty">Loading audit logs…</div></div>
+      </div>`;
+
+    const ref = $('#auditRefresh'); if (ref) ref.onclick = () => loadAuditData();
+    const src = $('#auditSearch'); if (src) src.oninput = U.debounce(e => { auditState.search = e.target.value.trim(); loadAuditData(); }, 300);
+    const ent = $('#auditEntityType'); if (ent) ent.onchange = e => { auditState.entityType = e.target.value; loadAuditData(); };
+    const act = $('#auditAction'); if (act) act.onchange = e => { auditState.action = e.target.value; loadAuditData(); };
+
+    await loadAuditData();
+  }
+
+  async function loadAuditData() {
+    const wrap = $('#auditTableWrap');
+    if (!wrap) return;
+    try {
+      const logs = await Store.getAuditLogs(auditState);
+      if (!logs || !logs.length) {
+        wrap.innerHTML = `<div class="empty">No audit logs found for the selected criteria.</div>`;
+        return;
+      }
+      const badgeClass = a => {
+        if (a.startsWith('CREATE')) return 'green';
+        if (a.startsWith('DELETE')) return 'red';
+        if (a.startsWith('RECORD')) return 'blue';
+        return 'amber';
+      };
+      const rows = logs.map(l => {
+        const dt = l.createdAt ? new Date(l.createdAt).toLocaleString('en-GB', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit' }) : '—';
+        return `<tr>
+          <td style="white-space:nowrap;font-size:12px;color:var(--muted)">${dt}</td>
+          <td><span class="badge ${badgeClass(l.action)}">${U.esc(l.action)}</span></td>
+          <td><b>${U.esc(l.entityType)}</b> <span class="muted">#${U.esc(l.entityId || '—')}</span></td>
+          <td><span class="badge gray">${U.esc(l.performedBy || 'system')}</span></td>
+          <td style="font-size:11px;color:var(--muted)">${U.esc(l.ipAddress || 'local')}</td>
+          <td class="t-right"><button class="btn sm" data-audit-idx="${l.id}">🔍 Details</button></td>
+        </tr>`;
+      }).join('');
+
+      wrap.innerHTML = `<table>
+        <thead><tr><th>Timestamp</th><th>Action</th><th>Entity</th><th>Performed By</th><th>IP</th><th class="t-right">Details</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+
+      $$('[data-audit-idx]').forEach(btn => {
+        btn.onclick = () => {
+          const logId = btn.dataset.auditIdx;
+          const log = logs.find(x => String(x.id) === String(logId));
+          if (!log) return;
+          const modalRoot = $('#modalRoot');
+          modalRoot.innerHTML = `
+            <div class="modal-backdrop">
+              <div class="modal" style="max-width:600px">
+                <div class="modal-head">
+                  <h2>Audit Log Details #${U.esc(log.id)}</h2>
+                  <button class="modal-close" id="closeAuditModal">×</button>
+                </div>
+                <div class="modal-body" style="padding:16px">
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;font-size:13px">
+                    <div><b>Action:</b> <span class="badge ${badgeClass(log.action)}">${U.esc(log.action)}</span></div>
+                    <div><b>Entity:</b> ${U.esc(log.entityType)} #${U.esc(log.entityId)}</div>
+                    <div><b>Performed By:</b> ${U.esc(log.performedBy)}</div>
+                    <div><b>Timestamp:</b> ${new Date(log.createdAt).toLocaleString()}</div>
+                  </div>
+                  <h4 style="margin:10px 0 6px;font-size:13px">Change Details</h4>
+                  <pre style="background:#0f172a;color:#f8fafc;padding:12px;border-radius:8px;font-size:12px;max-height:280px;overflow:auto">${U.esc(JSON.stringify(log.details, null, 2))}</pre>
+                </div>
+                <div class="modal-foot">
+                  <button class="btn" id="closeAuditBtn">Close</button>
+                </div>
+              </div>
+            </div>`;
+          const cm = $('#closeAuditModal'); if (cm) cm.onclick = () => modalRoot.innerHTML = '';
+          const cb = $('#closeAuditBtn'); if (cb) cb.onclick = () => modalRoot.innerHTML = '';
+        };
+      });
+    } catch(e) {
+      wrap.innerHTML = `<div class="empty">Failed to load audit logs: ${U.esc(e.message)}</div>`;
+    }
+  }
+
+  w.Views = { dashboard, students, studentDetail, businessDashboard, collect, collections, reports, attendance, attReport, marks, academics, users, data, audit, openPaymentModal, changePassword };
 })(window);

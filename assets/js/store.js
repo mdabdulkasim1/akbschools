@@ -1121,6 +1121,34 @@
       s.fees[k] = h;
     });
     return s;
+  },
+
+  async getAuditLogs(options) {
+    options = options || {};
+    const params = new URLSearchParams();
+    if (options.limit) params.set('limit', options.limit);
+    if (options.entityType) params.set('entityType', options.entityType);
+    if (options.action) params.set('action', options.action);
+    if (options.search) params.set('search', options.search);
+
+    if (serverMode) {
+      try {
+        const r = await fetch('/api/audit-logs?' + params.toString());
+        if (r.ok) {
+          const data = await r.json();
+          return data.logs || [];
+        }
+      } catch (e) {}
+    }
+
+    let logs = (this.state && Array.isArray(this.state.auditLogs)) ? this.state.auditLogs.slice() : [];
+    if (options.entityType) logs = logs.filter(l => l.entityType === options.entityType);
+    if (options.action) logs = logs.filter(l => l.action === options.action);
+    if (options.search) {
+      const term = String(options.search).toLowerCase();
+      logs = logs.filter(l => String(l.entityId).toLowerCase().includes(term) || String(l.performedBy).toLowerCase().includes(term) || String(l.action).toLowerCase().includes(term));
+    }
+    return logs.slice(0, options.limit || 100);
   }
 
   /* ---------- IndexedDB primitives ---------- */

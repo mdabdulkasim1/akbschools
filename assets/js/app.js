@@ -63,6 +63,7 @@
         case 'academics': setActive('academics'); Views.academics(params); break;
         case 'users': setActive('users'); Views.users(); break;
         case 'data': setActive('data'); Views.data(); break;
+        case 'audit': setActive('audit'); Views.audit(params); break;
         default: location.hash = '#/' + landing();
       }
     } catch (e) {

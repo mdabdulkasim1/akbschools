@@ -299,6 +299,42 @@ function getActor(req, body) {
   return 'system';
 }
 
+async function logAudit(action, entityType, entityId, details, actor, req) {
+  actor = actor || 'system';
+  const detailsJson = typeof details === 'object' ? JSON.stringify(details) : (details ? String(details) : null);
+  let ip = null;
+  if (req) {
+    ip = (req.headers && (req.headers['x-forwarded-for'] || req.headers['x-real-ip'])) || (req.socket && req.socket.remoteAddress) || null;
+    if (ip && ip.indexOf(',') >= 0) ip = ip.split(',')[0].trim();
+  }
+  const now = new Date().toISOString();
+
+  if (!DB.state.auditLogs) DB.state.auditLogs = [];
+  const logObj = {
+    id: Date.now() + Math.floor(Math.random() * 1000),
+    action,
+    entityType,
+    entityId: String(entityId || ''),
+    details: details || {},
+    performedBy: actor,
+    ipAddress: ip,
+    createdAt: now
+  };
+  DB.state.auditLogs.unshift(logObj);
+  if (DB.state.auditLogs.length > 1000) DB.state.auditLogs.pop();
+
+  if (hasMySQL()) {
+    const p = getPool();
+    if (p) {
+      p.query(
+        `INSERT INTO audit_logs (action, entity_type, entity_id, details_json, performed_by, ip_address, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+        [action, entityType, String(entityId || ''), detailsJson, actor, ip]
+      ).catch(err => console.warn('[Audit Log MySQL Warn]', err.message));
+    }
+  }
+}
+
 async function saveStudentInMySQL(p, s, stateMeta, actor) {
   if (!p || !s || !s.id) return;
   actor = actor || s.updatedBy || s.createdBy || 'system';
@@ -829,12 +865,61 @@ const server = http.createServer(async (req, res) => {
   if (!checkAuth(req)) return unauthorized(res);
   const url = (req.url || '/').split('?')[0];
   try {
+    if (url === '/api/audit-logs' && req.method === 'GET') {
+      const q = (req.url || '').split('?')[1] || '';
+      const params = new URLSearchParams(q);
+      const limit = Math.min(500, Math.max(1, parseInt(params.get('limit'), 10) || 100));
+      const entityType = params.get('entityType') || '';
+      const action = params.get('action') || '';
+      const search = params.get('search') || '';
+
+      if (hasMySQL()) {
+        const p = getPool();
+        if (p) {
+          try {
+            let sql = 'SELECT * FROM audit_logs WHERE 1=1';
+            const sqlParams = [];
+            if (entityType) { sql += ' AND entity_type = ?'; sqlParams.push(entityType); }
+            if (action) { sql += ' AND action = ?'; sqlParams.push(action); }
+            if (search) {
+              sql += ' AND (entity_id LIKE ? OR performed_by LIKE ? OR action LIKE ? OR details_json LIKE ?)';
+              const term = `%${search}%`;
+              sqlParams.push(term, term, term, term);
+            }
+            sql += ' ORDER BY id DESC LIMIT ?';
+            sqlParams.push(limit);
+
+            const [rows] = await p.query(sql, sqlParams);
+            const logs = rows.map(r => ({
+              id: r.id,
+              action: r.action,
+              entityType: r.entity_type,
+              entityId: r.entity_id,
+              details: (() => { try { return typeof r.details_json === 'string' ? JSON.parse(r.details_json) : r.details_json; } catch(e) { return r.details_json; } })(),
+              performedBy: r.performed_by,
+              ipAddress: r.ip_address,
+              createdAt: r.created_at
+            }));
+            return sendJSON(res, 200, { logs });
+          } catch(e) {
+            console.warn('[Audit Log Endpoint Warn]', e.message);
+          }
+        }
+      }
+
+      let logs = (DB.state && Array.isArray(DB.state.auditLogs)) ? DB.state.auditLogs.slice() : [];
+      if (entityType) logs = logs.filter(l => l.entityType === entityType);
+      if (action) logs = logs.filter(l => l.action === action);
+      if (search) {
+        const term = search.toLowerCase();
+        logs = logs.filter(l => String(l.entityId).toLowerCase().includes(term) || String(l.performedBy).toLowerCase().includes(term) || String(l.action).toLowerCase().includes(term));
+      }
+      return sendJSON(res, 200, { logs: logs.slice(0, limit) });
+    }
     if (url === '/api/state' && req.method === 'GET') {
       if (hasMySQL()) {
         try { await loadDBFromMySQL(); } catch (e) {}
       }
-      // Always guarantee the built-in logins exist and the managed teacher/
-      // academic accounts carry the correct role/pages/all-class scope.
       if (ensureProvisionedUsers()) {
         saveDB();
         if (hasMySQL()) persistProvisionedUsersToMySQL().catch(() => {});
@@ -849,6 +934,7 @@ const server = http.createServer(async (req, res) => {
         ensureProvisionedUsers();
         DB.version++;
         await saveDB();
+        logAudit('SYNC_STATE', 'app_state', 'state', { version: DB.version }, actor, req);
         if (hasMySQL()) {
           saveDBToMySQL(DB.state, actor).catch(err => console.warn('MySQL async save error:', err.message));
         }
@@ -862,9 +948,11 @@ const server = http.createServer(async (req, res) => {
       if (s && s.id) {
         if (!Array.isArray(DB.state.students)) DB.state.students = [];
         const idx = DB.state.students.findIndex(x => x.id === s.id);
+        const isNew = idx < 0;
         if (idx >= 0) DB.state.students[idx] = s; else DB.state.students.push(s);
         DB.version++;
         await saveDB();
+        logAudit(isNew ? 'CREATE_STUDENT' : 'UPDATE_STUDENT', 'students', s.id, { name: s.name, grade: s.grade, status: s.status, contact: s.contact, father: s.father }, actor, req);
 
         if (hasMySQL()) {
           const p = getPool();
@@ -877,6 +965,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.startsWith('/api/students/') && req.method === 'DELETE') {
       const id = decodeURIComponent(url.slice('/api/students/'.length));
+      const actor = getActor(req);
       if (id) {
         if (Array.isArray(DB.state.students)) {
           const idx = DB.state.students.findIndex(x => x.id === id);
@@ -884,6 +973,7 @@ const server = http.createServer(async (req, res) => {
         }
         DB.version++;
         await saveDB();
+        logAudit('DELETE_STUDENT', 'students', id, { id }, actor, req);
 
         if (hasMySQL()) {
           const p = getPool();
@@ -897,6 +987,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.startsWith('/api/payments/') && req.method === 'DELETE') {
       const id = decodeURIComponent(url.slice('/api/payments/'.length));
+      const actor = getActor(req);
       if (id) {
         if (Array.isArray(DB.state.payments)) {
           const idx = DB.state.payments.findIndex(x => (x.id === id || x.receiptNo === id));
@@ -904,6 +995,7 @@ const server = http.createServer(async (req, res) => {
         }
         DB.version++;
         await saveDB();
+        logAudit('DELETE_PAYMENT', 'payments', id, { receiptNo: id }, actor, req);
 
         if (hasMySQL()) {
           const p = getPool();
@@ -924,6 +1016,7 @@ const server = http.createServer(async (req, res) => {
         if (!Array.isArray(DB.state.payments)) DB.state.payments = [];
         const idx = DB.state.payments.findIndex(x => (x.id === rec.id || x.receiptNo === rec.receiptNo));
         if (idx >= 0) DB.state.payments[idx] = rec; else DB.state.payments.push(rec);
+        logAudit('RECORD_PAYMENT', 'payments', rec.receiptNo, { receiptNo: rec.receiptNo, studentId: rec.studentId, studentName: rec.studentName, grade: rec.grade, mode: rec.mode, amount: rec.amount }, actor, req);
       }
       if (body.student && body.student.id) {
         const s = body.student;
@@ -971,9 +1064,11 @@ const server = http.createServer(async (req, res) => {
       if (u && u.username) {
         if (!Array.isArray(DB.state.users)) DB.state.users = [];
         const idx = DB.state.users.findIndex(x => x.username.toLowerCase() === u.username.toLowerCase());
+        const isNew = idx < 0;
         if (idx >= 0) DB.state.users[idx] = u; else DB.state.users.push(u);
         DB.version++;
         await saveDB();
+        logAudit(isNew ? 'CREATE_USER' : 'UPDATE_USER', 'users', u.username, { username: u.username, role: u.role, name: u.name }, actor, req);
 
         if (hasMySQL()) {
           const p = getPool();
@@ -1005,6 +1100,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.startsWith('/api/users/') && req.method === 'DELETE') {
       const username = decodeURIComponent(url.slice('/api/users/'.length));
+      const actor = getActor(req);
       if (username) {
         if (Array.isArray(DB.state.users)) {
           const idx = DB.state.users.findIndex(x => x.username.toLowerCase() === username.toLowerCase());
@@ -1012,6 +1108,7 @@ const server = http.createServer(async (req, res) => {
         }
         DB.version++;
         await saveDB();
+        logAudit('DELETE_USER', 'users', username, { username }, actor, req);
 
         if (hasMySQL()) {
           const p = getPool();
@@ -1059,6 +1156,7 @@ const server = http.createServer(async (req, res) => {
       }
       DB.version++;
       await saveDB();
+      logAudit('UPDATE_ATTENDANCE', 'attendance', date || 'bulk', { count: records.length }, actor, req);
       return sendJSON(res, 200, { ok: true, version: DB.version });
     }
     if (url === '/api/holidays' && (req.method === 'POST' || req.method === 'PUT')) {
@@ -1083,6 +1181,7 @@ const server = http.createServer(async (req, res) => {
 
         DB.version++;
         await saveDB();
+        logAudit('UPDATE_HOLIDAY', 'holidays', date, { date, grade, on }, actor, req);
 
         if (hasMySQL()) {
           const p = getPool();
@@ -1115,6 +1214,7 @@ const server = http.createServer(async (req, res) => {
         }
         DB.version++;
         await saveDB();
+        logAudit('SAVE_REPORT_CARD', 'report_cards', id, { studentId: id }, actor, req);
 
         if (hasMySQL()) {
           const p = getPool();
@@ -1145,6 +1245,7 @@ const server = http.createServer(async (req, res) => {
         }
         DB.version++;
         await saveDB();
+        logAudit('UPDATE_SETTINGS', 'settings', key || 'bulk', { settings: settingsObj }, actor, req);
 
         if (hasMySQL()) {
           const p = getPool();
@@ -1174,6 +1275,7 @@ const server = http.createServer(async (req, res) => {
         if (idx >= 0) DB.state.meta.feeHeads[idx] = fh; else DB.state.meta.feeHeads.push(fh);
         DB.version++;
         await saveDB();
+        logAudit('SAVE_FEE_HEAD', 'fee_heads', fh.key, fh, actor, req);
 
         if (hasMySQL()) {
           const p = getPool();
@@ -1192,6 +1294,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.startsWith('/api/fee-heads/') && req.method === 'DELETE') {
       const key = decodeURIComponent(url.slice('/api/fee-heads/'.length));
+      const actor = getActor(req);
       if (key) {
         if (DB.state.meta && Array.isArray(DB.state.meta.feeHeads)) {
           const idx = DB.state.meta.feeHeads.findIndex(x => x.key === key);
@@ -1199,6 +1302,7 @@ const server = http.createServer(async (req, res) => {
         }
         DB.version++;
         await saveDB();
+        logAudit('DELETE_FEE_HEAD', 'fee_heads', key, { key }, actor, req);
 
         if (hasMySQL()) {
           const p = getPool();
