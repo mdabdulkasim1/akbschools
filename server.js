@@ -303,20 +303,20 @@ async function saveStudentInMySQL(p, s, stateMeta, actor) {
   if (!p || !s || !s.id) return;
   actor = actor || s.updatedBy || s.createdBy || 'system';
 
-  // 1. Guarantee Fee Heads exist first so foreign key constraint in student_fees never fails
+  // 1. Guarantee Fee Heads exist first (in parallel) so foreign key constraint in student_fees never fails
   const feeHeadsList = (stateMeta && Array.isArray(stateMeta.feeHeads) && stateMeta.feeHeads.length)
     ? stateMeta.feeHeads
     : DEFAULT_FEE_HEADS;
 
-  for (const fh of feeHeadsList) {
-    if (!fh.key) continue;
-    await p.query(
+  const fhPromises = feeHeadsList
+    .filter(fh => fh && fh.key)
+    .map(fh => p.query(
       `INSERT INTO fee_heads (head_key, label, business, created_by, updated_by, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, NOW(), NOW())
        ON DUPLICATE KEY UPDATE label=VALUES(label), business=VALUES(business), updated_by=VALUES(updated_by), updated_at=NOW()`,
       [fh.key, fh.label || fh.key, fh.business || 'school', actor, actor]
-    ).catch(() => {});
-  }
+    ).catch(() => {}));
+  await Promise.all(fhPromises);
 
   // 2. Insert/Update Student record
   await p.query(
@@ -336,52 +336,43 @@ async function saveStudentInMySQL(p, s, stateMeta, actor) {
     ]
   );
 
-  // 3. Insert/Update Student Fee Heads
+  const subTasks = [];
+
+  // 3. Insert/Update Student Fee Heads (parallel, no redundant fee_heads calls)
   if (s.fees && typeof s.fees === 'object') {
     for (const headKey of Object.keys(s.fees)) {
-      try {
-        const f = s.fees[headKey];
-        if (!f) continue;
-        const tot = typeof f === 'object' ? (Number(f.total) || 0) : (Number(f) || 0);
-        const pd = typeof f === 'object' ? (Number(f.paid) || 0) : 0;
-        const bal = typeof f === 'object' ? (Number(f.balance) || (tot - pd)) : tot;
+      const f = s.fees[headKey];
+      if (!f) continue;
+      const tot = typeof f === 'object' ? (Number(f.total) || 0) : (Number(f) || 0);
+      const pd = typeof f === 'object' ? (Number(f.paid) || 0) : 0;
+      const bal = typeof f === 'object' ? (Number(f.balance) || (tot - pd)) : tot;
 
-        await p.query(
-          `INSERT INTO fee_heads (head_key, label, business, created_by, updated_by, created_at, updated_at)
-           VALUES (?, ?, 'school', ?, ?, NOW(), NOW())
-           ON DUPLICATE KEY UPDATE label=VALUES(label), updated_by=VALUES(updated_by), updated_at=NOW()`,
-          [headKey, headKey, actor, actor]
-        ).catch(() => {});
-
-        await p.query(
-          `INSERT INTO student_fees (student_id, head_key, total_amount, paid_amount, balance_amount, created_by, updated_by, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
-           ON DUPLICATE KEY UPDATE
-             total_amount=VALUES(total_amount), paid_amount=VALUES(paid_amount), balance_amount=VALUES(balance_amount), updated_by=VALUES(updated_by), updated_at=NOW()`,
-          [s.id, headKey, tot, pd, bal, actor, actor]
-        );
-      } catch (fe) {
-        console.warn('[MySQL Save Student Fee Warn]', s.id, headKey, fe.message);
-      }
+      subTasks.push(p.query(
+        `INSERT INTO student_fees (student_id, head_key, total_amount, paid_amount, balance_amount, created_by, updated_by, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+         ON DUPLICATE KEY UPDATE
+           total_amount=VALUES(total_amount), paid_amount=VALUES(paid_amount), balance_amount=VALUES(balance_amount), updated_by=VALUES(updated_by), updated_at=NOW()`,
+        [s.id, headKey, tot, pd, bal, actor, actor]
+      ).catch(fe => console.warn('[MySQL Save Student Fee Warn]', s.id, headKey, fe.message)));
     }
   }
 
-  // 4. Insert/Update Student Transport Monthly
+  // 4. Insert/Update Student Transport Monthly (parallel)
   if (s.transport && typeof s.transport === 'object') {
     for (const mKey of Object.keys(s.transport)) {
       const tr = s.transport[mKey];
       if (!tr) continue;
-      await p.query(
+      subTasks.push(p.query(
         `INSERT INTO student_transport_monthly (student_id, month_key, total_amount, paid_amount, balance_amount, created_by, updated_by, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
          ON DUPLICATE KEY UPDATE
            total_amount=VALUES(total_amount), paid_amount=VALUES(paid_amount), balance_amount=VALUES(balance_amount), updated_by=VALUES(updated_by), updated_at=NOW()`,
         [s.id, mKey, Number(tr.total) || 0, Number(tr.paid) || 0, Number(tr.balance) || 0, actor, actor]
-      ).catch(() => {});
+      ).catch(() => {}));
     }
   }
 
-  // 5. Insert/Update Student Sub Fees
+  // 5. Insert/Update Student Sub Fees (parallel)
   if (s.subs && typeof s.subs === 'object') {
     for (const pHead of Object.keys(s.subs)) {
       const bag = s.subs[pHead];
@@ -389,13 +380,13 @@ async function saveStudentInMySQL(p, s, stateMeta, actor) {
       for (const subKey of Object.keys(bag)) {
         const sb = bag[subKey];
         if (!sb) continue;
-        await p.query(
+        subTasks.push(p.query(
           `INSERT INTO student_sub_fees (student_id, parent_head_key, sub_key, total_amount, paid_amount, balance_amount, created_by, updated_by, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
            ON DUPLICATE KEY UPDATE
              total_amount=VALUES(total_amount), paid_amount=VALUES(paid_amount), balance_amount=VALUES(balance_amount), updated_by=VALUES(updated_by), updated_at=NOW()`,
           [s.id, pHead, subKey, Number(sb.total) || 0, Number(sb.paid) || 0, Number(sb.balance) || 0, actor, actor]
-        ).catch(() => {});
+        ).catch(() => {}));
       }
     }
   }
@@ -403,13 +394,15 @@ async function saveStudentInMySQL(p, s, stateMeta, actor) {
   // 6. Insert/Update Student Report Cards
   if (s.report && typeof s.report === 'object') {
     const reportJson = JSON.stringify(s.report);
-    await p.query(
+    subTasks.push(p.query(
       `INSERT INTO report_cards (student_id, report_json, created_by, updated_by, created_at, updated_at)
        VALUES (?, ?, ?, ?, NOW(), NOW())
        ON DUPLICATE KEY UPDATE report_json=VALUES(report_json), updated_by=VALUES(updated_by), updated_at=NOW()`,
       [s.id, reportJson, actor, actor]
-    ).catch(() => {});
+    ).catch(() => {}));
   }
+
+  await Promise.all(subTasks);
 }
 
 async function saveDBToMySQL(state, actor) {
@@ -876,7 +869,7 @@ const server = http.createServer(async (req, res) => {
         if (hasMySQL()) {
           const p = getPool();
           if (p) {
-            await saveStudentInMySQL(p, s, DB.state ? DB.state.meta : null, actor).catch(err => console.warn('[Direct Student MySQL Update Warn]', err.message));
+            saveStudentInMySQL(p, s, DB.state ? DB.state.meta : null, actor).catch(err => console.warn('[Direct Student MySQL Update Warn]', err.message));
           }
         }
       }
