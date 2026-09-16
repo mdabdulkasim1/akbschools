@@ -875,6 +875,15 @@
         arr = arr.filter(x => x !== token);
       }
       if (arr.length) this.meta.holidays[date] = arr; else delete this.meta.holidays[date];
+      if (serverMode) {
+        try {
+          await fetch('/api/holidays', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-User-Name': this.currentUser ? this.currentUser.username : 'admin' },
+            body: JSON.stringify({ date, grade, on })
+          });
+        } catch (e) {}
+      }
       await this.persist();
     },
     // list of grades present in the roster, in a sensible order
@@ -901,6 +910,15 @@
       if (!s) throw new Error('Student not found');
       s.report = report || {};
       s.reportUpdatedAt = new Date().toISOString();
+      if (serverMode) {
+        try {
+          await fetch('/api/students/' + encodeURIComponent(id) + '/report', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-User-Name': this.currentUser ? this.currentUser.username : 'admin' },
+            body: JSON.stringify({ report })
+          });
+        } catch (e) {}
+      }
       await this.persist();
     },
 

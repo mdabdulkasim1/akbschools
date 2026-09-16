@@ -1068,6 +1068,108 @@ const server = http.createServer(async (req, res) => {
       await saveDB();
       return sendJSON(res, 200, { ok: true, version: DB.version });
     }
+    if (url === '/api/holidays' && (req.method === 'POST' || req.method === 'PUT')) {
+      const body = JSON.parse(await readBody(req));
+      const actor = getActor(req, body);
+      const { date, grade, on } = body;
+      if (date) {
+        if (!DB.state.meta) DB.state.meta = {};
+        if (!DB.state.meta.holidays) DB.state.meta.holidays = {};
+        const token = grade || '__ALL__';
+        let arr = Array.isArray(DB.state.meta.holidays[date]) ? DB.state.meta.holidays[date].slice() : [];
+        if (token === '__ALL__' && on) {
+          arr = ['__ALL__'];
+        } else if (on) {
+          if (arr.indexOf('__ALL__') < 0 && arr.indexOf(token) < 0) arr.push(token);
+        } else {
+          if (token === '__ALL__') arr = [];
+          else arr = arr.filter(x => x !== token && x !== '__ALL__');
+        }
+        if (arr.length) DB.state.meta.holidays[date] = arr;
+        else delete DB.state.meta.holidays[date];
+
+        DB.version++;
+        await saveDB();
+
+        if (hasMySQL()) {
+          const p = getPool();
+          if (p) {
+            const valStr = JSON.stringify(DB.state.meta.holidays);
+            await p.query(
+              `INSERT INTO app_settings (setting_key, setting_value, created_by, updated_by, created_at, updated_at)
+               VALUES ('holidays', ?, ?, ?, NOW(), NOW())
+               ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value), updated_by=VALUES(updated_by), updated_at=NOW()`,
+              [valStr, actor, actor]
+            ).catch(err => console.warn('[Direct Holiday MySQL Update Warn]', err.message));
+          }
+        }
+      }
+      return sendJSON(res, 200, { ok: true, version: DB.version });
+    }
+    if (url.startsWith('/api/students/') && url.endsWith('/report') && (req.method === 'POST' || req.method === 'PUT')) {
+      const parts = url.split('/');
+      const id = decodeURIComponent(parts[3]);
+      const body = JSON.parse(await readBody(req));
+      const actor = getActor(req, body);
+      const report = body.report || body;
+      if (id) {
+        if (Array.isArray(DB.state.students)) {
+          const s = DB.state.students.find(x => x.id === id);
+          if (s) {
+            s.report = report || {};
+            s.reportUpdatedAt = new Date().toISOString();
+          }
+        }
+        DB.version++;
+        await saveDB();
+
+        if (hasMySQL()) {
+          const p = getPool();
+          if (p) {
+            const reportJson = JSON.stringify(report || {});
+            await p.query(
+              `INSERT INTO report_cards (student_id, report_json, created_by, updated_by, created_at, updated_at)
+               VALUES (?, ?, ?, ?, NOW(), NOW())
+               ON DUPLICATE KEY UPDATE report_json=VALUES(report_json), updated_by=VALUES(updated_by), updated_at=NOW()`,
+              [id, reportJson, actor, actor]
+            ).catch(err => console.warn('[Direct ReportCard MySQL Update Warn]', err.message));
+          }
+        }
+      }
+      return sendJSON(res, 200, { ok: true, version: DB.version });
+    }
+    if (url === '/api/settings' && (req.method === 'POST' || req.method === 'PUT')) {
+      const body = JSON.parse(await readBody(req));
+      const actor = getActor(req, body);
+      const key = body.key;
+      const value = body.value;
+      const settingsObj = body.settings || (key !== undefined ? { [key]: value } : null);
+
+      if (settingsObj && typeof settingsObj === 'object') {
+        if (!DB.state.meta) DB.state.meta = {};
+        for (const k of Object.keys(settingsObj)) {
+          DB.state.meta[k] = settingsObj[k];
+        }
+        DB.version++;
+        await saveDB();
+
+        if (hasMySQL()) {
+          const p = getPool();
+          if (p) {
+            for (const k of Object.keys(settingsObj)) {
+              const valStr = JSON.stringify(settingsObj[k]);
+              await p.query(
+                `INSERT INTO app_settings (setting_key, setting_value, created_by, updated_by, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, NOW(), NOW())
+                 ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value), updated_by=VALUES(updated_by), updated_at=NOW()`,
+                [k, valStr, actor, actor]
+              ).catch(err => console.warn('[Direct Setting MySQL Update Warn]', k, err.message));
+            }
+          }
+        }
+      }
+      return sendJSON(res, 200, { ok: true, version: DB.version });
+    }
     if (url.startsWith('/api/fee-heads') && (req.method === 'POST' || req.method === 'PUT')) {
       const body = JSON.parse(await readBody(req));
       const actor = getActor(req, body);
