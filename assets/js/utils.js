@@ -161,5 +161,38 @@
     return 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   }
 
-  w.U = { inr, inum, esc, initials, todayISO, fmtDate, inWords, debounce, download, toCSV, fromCSV, imageToDataURL, normalizePhone, waLink, smsLink, toast, uid };
+  // Global API fetch loader interceptor
+  let activeApiRequests = 0;
+  const origFetch = w.fetch;
+  function setLoaderState(loading) {
+    const pBar = document.getElementById('globalProgressBar');
+    const badge = document.getElementById('globalLoaderBadge');
+    if (pBar) pBar.classList.toggle('loading', loading);
+    if (badge) badge.classList.toggle('visible', loading);
+  }
+
+  if (origFetch) {
+    w.fetch = function () {
+      const firstArg = arguments[0];
+      const url = typeof firstArg === 'string' ? firstArg : (firstArg && firstArg.url ? firstArg.url : '');
+      const isApi = url.indexOf('/api/') !== -1 || url.indexOf('api/') !== -1;
+
+      if (isApi) {
+        activeApiRequests++;
+        setLoaderState(true);
+      }
+
+      return origFetch.apply(this, arguments)
+        .finally(() => {
+          if (isApi) {
+            activeApiRequests = Math.max(0, activeApiRequests - 1);
+            if (activeApiRequests === 0) {
+              setLoaderState(false);
+            }
+          }
+        });
+    };
+  }
+
+  w.U = { inr, inum, esc, initials, todayISO, fmtDate, inWords, debounce, download, toCSV, fromCSV, imageToDataURL, normalizePhone, waLink, smsLink, toast, uid, setLoaderState };
 })(window);

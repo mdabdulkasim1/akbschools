@@ -300,3 +300,58 @@ tr.row-absent{background:var(--red-l)}
 .card.link:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg)}
 .biz-logo{height:26px;width:auto;vertical-align:middle;margin-right:8px}
 .biz-head{display:flex;align-items:center;gap:8px}
+
+/* ===== Global API Request Loader & Progress Bar ===== */
+.global-progress-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 99999;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease-in-out;
+  background: linear-gradient(90deg, #1d4ed8, #3b82f6, #60a5fa, #1d4ed8);
+  background-size: 200% 100%;
+}
+.global-progress-bar.loading {
+  opacity: 1;
+  animation: barIndeterminate 1.2s infinite linear;
+}
+@keyframes barIndeterminate {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.global-loader-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--primary-l);
+  color: var(--primary);
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid #bfdbfe;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+.global-loader-badge.visible {
+  opacity: 1;
+  visibility: visible;
+}
+.spinner-sm {
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(29, 78, 216, 0.25);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  display: inline-block;
+  animation: spinnerRotate 0.6s linear infinite;
+}
+@keyframes spinnerRotate {
+  to { transform: rotate(360deg); }
+}

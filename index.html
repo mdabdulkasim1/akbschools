@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="assets/css/styles.css" />
 </head>
 <body>
+  <div id="globalProgressBar" class="global-progress-bar"></div>
   <div id="app">
     <aside class="sidebar" id="sidebar">
       <div class="brand">
@@ -44,6 +45,10 @@
           <div id="searchResults" class="search-results"></div>
         </div>
         <div class="topbar-right">
+          <div id="globalLoaderBadge" class="global-loader-badge" title="Syncing data with server...">
+            <span class="spinner-sm"></span>
+            <span>Saving…</span>
+          </div>
           <span id="dbStatus" class="db-status">●</span>
         </div>
       </header>
