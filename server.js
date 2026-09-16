@@ -504,6 +504,14 @@ async function saveDBToMySQL(state, actor) {
         for (const stId of Object.keys(stMap)) {
           const stVal = stMap[stId];
           if (!stVal) continue;
+          // Guarantee parent student record exists in students table to prevent FK constraint error
+          await p.query(
+            `INSERT INTO students (id, name, created_by, updated_by, created_at, updated_at)
+             VALUES (?, ?, ?, ?, NOW(), NOW())
+             ON DUPLICATE KEY UPDATE updated_at=NOW()`,
+            [stId, stId, actor, actor]
+          ).catch(() => {});
+
           await p.query(
             `INSERT INTO attendance (date, student_id, status, created_by, updated_by, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, NOW(), NOW())
@@ -1019,6 +1027,45 @@ const server = http.createServer(async (req, res) => {
           }
         }
       }
+      return sendJSON(res, 200, { ok: true, version: DB.version });
+    }
+    if (url.startsWith('/api/attendance') && (req.method === 'POST' || req.method === 'PUT')) {
+      const body = JSON.parse(await readBody(req));
+      const actor = getActor(req, body);
+      const date = body.date;
+      const studentId = body.studentId || body.id;
+      const status = body.status;
+      const records = Array.isArray(body.records) ? body.records : (date && studentId ? [{ date, studentId, status: status || 'P' }] : []);
+
+      if (!DB.state.meta) DB.state.meta = {};
+      if (!DB.state.meta.attendance) DB.state.meta.attendance = {};
+
+      if (hasMySQL()) {
+        const p = getPool();
+        for (const r of records) {
+          if (!r.date || !r.studentId) continue;
+          if (!DB.state.meta.attendance[r.date]) DB.state.meta.attendance[r.date] = {};
+          DB.state.meta.attendance[r.date][r.studentId] = r.status || 'P';
+
+          if (p) {
+            await p.query(
+              `INSERT INTO students (id, name, created_by, updated_by, created_at, updated_at)
+               VALUES (?, ?, ?, ?, NOW(), NOW())
+               ON DUPLICATE KEY UPDATE updated_at=NOW()`,
+              [r.studentId, r.studentId, actor, actor]
+            ).catch(() => {});
+
+            await p.query(
+              `INSERT INTO attendance (date, student_id, status, created_by, updated_by, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, NOW(), NOW())
+               ON DUPLICATE KEY UPDATE status=VALUES(status), updated_by=VALUES(updated_by), updated_at=NOW()`,
+              [r.date, r.studentId, String(r.status || 'P'), actor, actor]
+            ).catch(err => console.warn('[Direct Attendance MySQL Update Warn]', err.message));
+          }
+        }
+      }
+      DB.version++;
+      await saveDB();
       return sendJSON(res, 200, { ok: true, version: DB.version });
     }
     if (url.startsWith('/api/fee-heads') && (req.method === 'POST' || req.method === 'PUT')) {

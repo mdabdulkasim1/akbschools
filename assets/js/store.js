@@ -807,6 +807,15 @@
       if (!this.meta.attendance) this.meta.attendance = {};
       if (!this.meta.attendance[date]) this.meta.attendance[date] = {};
       this.meta.attendance[date][studentId] = status; // 'P' | 'A'
+      if (serverMode) {
+        try {
+          await fetch('/api/attendance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-User-Name': this.currentUser ? this.currentUser.username : 'admin' },
+            body: JSON.stringify({ date, studentId, status })
+          });
+        } catch (e) {}
+      }
       await this.persist();
     },
     // Mark every student in a grade present for a date (default fill).
@@ -814,9 +823,20 @@
       if (!this.meta.attendance) this.meta.attendance = {};
       if (!this.meta.attendance[date]) this.meta.attendance[date] = {};
       const day = this.meta.attendance[date];
+      const records = [];
       this.students.filter(s => !grade || s.grade === grade).forEach(s => {
         if (!day[s.id]) day[s.id] = 'P';
+        records.push({ date, studentId: s.id, status: day[s.id] });
       });
+      if (serverMode && records.length) {
+        try {
+          await fetch('/api/attendance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-User-Name': this.currentUser ? this.currentUser.username : 'admin' },
+            body: JSON.stringify({ records })
+          });
+        } catch (e) {}
+      }
       await this.persist();
     },
     // Students absent on a date (optionally within a grade). A class marked as a
