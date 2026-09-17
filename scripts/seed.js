@@ -74,13 +74,14 @@ async function runSeeder() {
 
     const startTime = Date.now();
     try {
-      const [countRows] = await db.query('SELECT COUNT(*) AS count FROM students');
-      if (countRows && countRows[0] && countRows[0].count > 0) {
-        writeLog(`Students table already populated (${countRows[0].count} records). Skipping seeding.`);
-        await db.end();
-        return;
-      }
-    } catch (e) {}
+      try {
+        const [countRows] = await db.query('SELECT COUNT(*) AS count FROM students');
+        if (countRows && countRows[0] && countRows[0].count > 0) {
+          writeLog(`Students table already populated (${countRows[0].count} records). Skipping seeding.`);
+          await db.end();
+          return;
+        }
+      } catch (e) {}
 
     // Read seed file
     let seedStudents = [];

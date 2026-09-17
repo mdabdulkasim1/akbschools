@@ -942,7 +942,11 @@
     },
     getUser(username) { return this.users.find(u => u.username && u.username.toLowerCase() === String(username).toLowerCase()); },
     async verifyLogin(username, password) {
-      const u = this.getUser(username);
+      let u = this.getUser(username);
+      if (!u && (serverMode || true)) {
+        await this.refresh().catch(() => {});
+        u = this.getUser(username);
+      }
       if (!u) return null;
       let salt = u.salt;
       let hash = u.hash;
@@ -956,8 +960,18 @@
         }
       }
       if (!salt) return null;
-      const h = await pbkdf(password, salt);
-      return h === hash ? u : null;
+      let h = await pbkdf(password, salt);
+      if (h !== hash) {
+        // If local verification fails, refresh state from server to ensure we have the latest salt & hash
+        await this.refresh().catch(() => {});
+        u = this.getUser(username);
+        if (u) {
+          salt = u.salt || (u.passwordHash && u.passwordHash.split(':')[0]);
+          hash = u.hash || (u.passwordHash && u.passwordHash.split(':')[1]);
+          if (salt) h = await pbkdf(password, salt);
+        }
+      }
+      return (u && h === hash) ? u : null;
     },
     async _syncUser(u) {
       if (serverMode && u && u.username) {
