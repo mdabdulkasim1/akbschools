@@ -90,6 +90,24 @@ let DB = { version: 0, state: { students: [], payments: [], users: [], meta: {} 
 function loadDB() {
   try { DB = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); if (!DB.state) DB.state = { students: [], payments: [], users: [], meta: {} }; }
   catch (e) { /* fresh */ }
+
+  if (!DB.state || !Array.isArray(DB.state.students) || !DB.state.students.length) {
+    try {
+      const seedPath = path.join(ROOT, 'data', 'students.seed.json');
+      if (fs.existsSync(seedPath)) {
+        const seedData = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+        const st = Array.isArray(seedData) ? seedData : (seedData && seedData.students ? seedData.students : []);
+        if (st.length) {
+          DB.state = DB.state || {};
+          DB.state.students = st;
+          DB.state.meta = Object.assign({ seeded: true, school: seedData.school || 'AKB School of Excellence', year: seedData.year || '2026-2027' }, DB.state.meta || {});
+          console.log('[Server] Loaded ' + st.length + ' students from data/students.seed.json');
+        }
+      }
+    } catch (e) {
+      console.warn('[Server] Seed load warning:', e.message);
+    }
+  }
 }
 let writeChain = Promise.resolve();
 function saveDB() {
@@ -101,9 +119,11 @@ function saveDB() {
 }
 loadDB();
 
-async function loadDBFromMySQL() {
+let lastMySqlLoadAt = 0;
+async function loadDBFromMySQL(force) {
   const p = getPool();
   if (!p) return false;
+  if (!force && Date.now() - lastMySqlLoadAt < 10000) return true;
   try {
     const [stRows] = await p.query('SELECT * FROM students');
     const [sfRows] = await p.query('SELECT * FROM student_fees');
@@ -267,6 +287,7 @@ async function loadDBFromMySQL() {
     if (Object.keys(attendanceMap).length > 0) meta.attendance = attendanceMap;
 
     if (students.length > 0 || payments.length > 0) {
+      lastMySqlLoadAt = Date.now();
       DB.state = {
         students,
         payments,
@@ -915,6 +936,35 @@ const server = http.createServer(async (req, res) => {
         logs = logs.filter(l => String(l.entityId).toLowerCase().includes(term) || String(l.performedBy).toLowerCase().includes(term) || String(l.action).toLowerCase().includes(term));
       }
       return sendJSON(res, 200, { logs: logs.slice(0, limit) });
+    }
+    if (url === '/api/students' && req.method === 'GET') {
+      if (hasMySQL()) { try { await loadDBFromMySQL(); } catch (e) {} }
+      return sendJSON(res, 200, (DB.state && DB.state.students) || []);
+    }
+    if (url === '/api/payments' && req.method === 'GET') {
+      if (hasMySQL()) { try { await loadDBFromMySQL(); } catch (e) {} }
+      return sendJSON(res, 200, (DB.state && DB.state.payments) || []);
+    }
+    if (url === '/api/users' && req.method === 'GET') {
+      if (hasMySQL()) { try { await loadDBFromMySQL(); } catch (e) {} }
+      ensureProvisionedUsers();
+      return sendJSON(res, 200, (DB.state && DB.state.users) || []);
+    }
+    if (url === '/api/fee-heads' && req.method === 'GET') {
+      if (hasMySQL()) { try { await loadDBFromMySQL(); } catch (e) {} }
+      return sendJSON(res, 200, (DB.state && DB.state.meta && DB.state.meta.feeHeads) || []);
+    }
+    if (url === '/api/settings' && req.method === 'GET') {
+      if (hasMySQL()) { try { await loadDBFromMySQL(); } catch (e) {} }
+      return sendJSON(res, 200, (DB.state && DB.state.meta) || {});
+    }
+    if (url === '/api/attendance' && req.method === 'GET') {
+      if (hasMySQL()) { try { await loadDBFromMySQL(); } catch (e) {} }
+      return sendJSON(res, 200, (DB.state && DB.state.meta && DB.state.meta.attendance) || {});
+    }
+    if (url === '/api/holidays' && req.method === 'GET') {
+      if (hasMySQL()) { try { await loadDBFromMySQL(); } catch (e) {} }
+      return sendJSON(res, 200, (DB.state && DB.state.meta && DB.state.meta.holidays) || {});
     }
     if (url === '/api/state' && req.method === 'GET') {
       if (hasMySQL()) {

@@ -39,7 +39,45 @@
     return Store.canAccess(pageOf(name));
   }
 
-  function route() {
+  async function ensureModuleData(name) {
+    const page = pageOf(name);
+    switch (page) {
+      case 'dashboard':
+        await Promise.all([Store.fetchSettings(), Store.fetchFeeHeads(), Store.fetchStudents(), Store.fetchPayments()]);
+        break;
+      case 'students':
+      case 'student':
+        await Promise.all([Store.fetchSettings(), Store.fetchFeeHeads(), Store.fetchStudents()]);
+        break;
+      case 'collect':
+      case 'collections':
+        await Promise.all([Store.fetchSettings(), Store.fetchFeeHeads(), Store.fetchStudents(), Store.fetchPayments()]);
+        break;
+      case 'reports':
+      case 'business':
+        await Promise.all([Store.fetchSettings(), Store.fetchFeeHeads(), Store.fetchStudents(), Store.fetchPayments()]);
+        break;
+      case 'attendance':
+      case 'attreport':
+        await Promise.all([Store.fetchStudents(), Store.fetchAttendance(), Store.fetchHolidays()]);
+        break;
+      case 'marks':
+      case 'academics':
+        await Promise.all([Store.fetchStudents(), Store.fetchSettings()]);
+        break;
+      case 'users':
+        await Store.fetchUsers();
+        break;
+      case 'data':
+      case 'audit':
+        await Promise.all([Store.fetchSettings(), Store.fetchFeeHeads()]);
+        break;
+      default:
+        await Promise.all([Store.fetchSettings(), Store.fetchFeeHeads()]);
+    }
+  }
+
+  async function route() {
     const { seg, params } = parseHash();
     let name = seg[0];
     if (!allowed(name)) {
@@ -49,6 +87,9 @@
       if (location.hash.replace(/^#\/?/, '').split('/')[0] !== land) { location.hash = '#/' + land; return; }
     }
     try {
+      // Fetch only the data required for this module on-demand when entering the route
+      await ensureModuleData(name);
+
       switch (name) {
         case 'dashboard': setActive('dashboard'); Views.dashboard(); break;
         case 'students': setActive('students'); Views.students(params); break;
@@ -126,6 +167,7 @@
 
   let wired = false;
   function startApp() {
+    document.getElementById('app').style.display = '';
     applyRoleUI();
     if (!wired) {
       wireGlobalSearch();
@@ -143,13 +185,14 @@
     try {
       await Store.init();
       const u = Store.restoreSession();
-      if (u) startApp(u);
-      else Auth.showLogin(startApp);
+      if (!u) {
+        Auth.showLogin(startApp);
+      } else {
+        startApp(u);
+      }
     } catch (e) {
       console.error(e);
-      document.getElementById('view').innerHTML =
-        '<div class="empty">Failed to load data: ' + U.esc(e.message) +
-        '<br><br>If you opened this file directly, try a local server:<br><code>python3 -m http.server</code> then open <code>http://localhost:8000</code></div>';
+      Auth.showLogin(startApp);
     }
   }
 

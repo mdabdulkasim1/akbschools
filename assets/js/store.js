@@ -182,7 +182,7 @@
   let db = null;
   let useIDB = true;
   // server-shared-state mode (set at init if /api/state is reachable)
-  let serverMode = false, baseVersion = 0, syncTimer = null, syncing = false, syncAgain = false, dirty = false;
+  let serverMode = typeof window !== 'undefined' && window.location && String(window.location.protocol).indexOf('http') === 0, baseVersion = 0, syncTimer = null, syncing = false, syncAgain = false, dirty = false;
 
   const Store = {
     students: [],   // in-memory cache
@@ -198,37 +198,101 @@
 
     serverMode() { return serverMode; },
 
-    async init() {
-      // Prefer shared server state (all devices see one dataset)
+    async fetchUsers() {
       try {
-        const r = await fetch('/api/state', { cache: 'no-store' });
-        if (r.ok) { serverMode = true; this._applyServer(await r.json()); }
-      } catch (e) { serverMode = false; }
-
-      if (!serverMode) {
-        try { db = await openDB(); } catch (e) { console.warn('IndexedDB unavailable, using localStorage', e); useIDB = false; }
-        await this.load();
-      } else if (!this.students.length) {
-        // Server is empty on first connect — migrate this browser's saved data (if any)
-        try {
-          if (!db) { try { db = await openDB(); } catch (e) { db = null; } }
-          if (db) {
-            const local = await idbAll('students');
-            if (local && local.length) {
-              this.students = local;
-              this.payments = (await idbAll('payments')) || [];
-              this.users = (await idbAll('users')) || [];
-              const mr = await idbAll('meta'); this.meta = (mr[0] && mr[0].value) || this.meta;
-              U.toast('Uploading this device’s saved data to the server…', 'success');
-            }
+        const r = await fetch('/api/users', { cache: 'no-store' });
+        if (r.ok) { this.users = await r.json(); serverMode = true; return true; }
+      } catch (e) {}
+      return false;
+    },
+    async fetchStudents() {
+      try {
+        const r = await fetch('/api/students', { cache: 'no-store' });
+        if (r.ok) {
+          const list = await r.json();
+          if (Array.isArray(list) && list.length > 0) {
+            this.students = list;
+            this.recomputeAll();
+            serverMode = true;
+            return true;
           }
-        } catch (e) {}
-      }
+        }
+      } catch (e) {}
+      return false;
+    },
+    async fetchPayments() {
+      try {
+        const r = await fetch('/api/payments', { cache: 'no-store' });
+        if (r.ok) {
+          const list = await r.json();
+          if (Array.isArray(list) && list.length > 0) {
+            this.payments = list;
+            serverMode = true;
+            return true;
+          }
+        }
+      } catch (e) {}
+      return false;
+    },
+    async fetchFeeHeads() {
+      try {
+        const r = await fetch('/api/fee-heads', { cache: 'no-store' });
+        if (r.ok) {
+          const list = await r.json();
+          if (Array.isArray(list) && list.length) { this.feeHeads = list; rebuildHeads(this.feeHeads); }
+          serverMode = true;
+          return true;
+        }
+      } catch (e) {}
+      return false;
+    },
+    async fetchSettings() {
+      try {
+        const r = await fetch('/api/settings', { cache: 'no-store' });
+        if (r.ok) {
+          this.meta = (await r.json()) || {};
+          if (Array.isArray(this.meta.feeHeads) && this.meta.feeHeads.length) { this.feeHeads = this.meta.feeHeads; rebuildHeads(this.feeHeads); }
+          serverMode = true;
+          return true;
+        }
+      } catch (e) {}
+      return false;
+    },
+    async fetchAttendance() {
+      try {
+        const r = await fetch('/api/attendance', { cache: 'no-store' });
+        if (r.ok) {
+          const att = await r.json();
+          if (!this.meta) this.meta = {};
+          this.meta.attendance = att || {};
+          serverMode = true;
+          return true;
+        }
+      } catch (e) {}
+      return false;
+    },
+    async fetchHolidays() {
+      try {
+        const r = await fetch('/api/holidays', { cache: 'no-store' });
+        if (r.ok) {
+          const hol = await r.json();
+          if (!this.meta) this.meta = {};
+          this.meta.holidays = hol || {};
+          serverMode = true;
+          return true;
+        }
+      } catch (e) {}
+      return false;
+    },
 
-      // seed only when truly empty (never clobber existing server data)
-      if (!this.meta.seeded && !this.students.length) await this.seed();
-      else if (!this.meta.seeded) this.meta.seeded = true;
+    async init() {
+      // Zero API calls on initial boot — load local storage/IndexedDB structure
+      if (useIDB) {
+        try { db = await openDB(); } catch (e) { useIDB = false; }
+      }
+      await this.load();
       if (!this.users.length) await this.seedUsers();
+      if (!this.students.length) await this.seed();
 
       if (!Array.isArray(this.meta.feeHeads) || !this.meta.feeHeads.length) {
         this.meta.feeHeads = DEFAULT_FEE_HEADS.map(h => Object.assign({}, h));
@@ -236,31 +300,23 @@
       this.feeHeads = this.meta.feeHeads;
       rebuildHeads(this.feeHeads);
       this.migrateLegacyHeads(); this.ensureStudentHeads();
-      await this.persist(); // pushes seed/migration to server (or writes locally)
       this.recomputeAll();
 
-      // save any pending change before the tab is closed/hidden so the last
-      // transaction is never lost (keepalive lets the request finish on unload)
-      if (typeof window !== 'undefined' && !this._unloadHooked) {
-        this._unloadHooked = true;
-        const beacon = () => {
-          if (!serverMode || !dirty) return;
-          try {
-            fetch('/api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, keepalive: true, body: JSON.stringify({ baseVersion, state: this._snapshot() }) }).then(() => { dirty = false; }).catch(() => {});
-          } catch (e) {}
-        };
-        window.addEventListener('pagehide', beacon);
-        window.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') beacon(); });
-      }
       return this;
     },
 
     async refresh() {
       try {
-        const r = await fetch('/api/state', { cache: 'no-store' });
-        if (r.ok) {
+        const results = await Promise.all([
+          this.fetchUsers(),
+          this.fetchSettings(),
+          this.fetchFeeHeads(),
+          this.fetchStudents(),
+          this.fetchPayments()
+        ]);
+        if (results.some(Boolean)) {
           serverMode = true;
-          this._applyServer(await r.json());
+          this.recomputeAll();
           this._mirrorLocal();
           return true;
         }
@@ -268,7 +324,7 @@
       return false;
     },
 
-    /* ---- persistence (server if available, else IndexedDB/localStorage) ---- */
+    /* ---- persistence (local IndexedDB/localStorage backup) ---- */
     _snapshot() { return { students: this.students, payments: this.payments, users: this.users, meta: this.meta }; },
     _applyServer(dbObj) {
       baseVersion = (dbObj && dbObj.version) || 0;
@@ -281,11 +337,7 @@
       this.recomputeAll();
     },
     async persist() {
-      if (serverMode) {
-        this._scheduleSync();
-        this._mirrorLocal(); // keep a local copy so this device can recover if the server resets
-        return;
-      }
+      this._mirrorLocal();
       if (useIDB) {
         await idbClear('students'); await idbPutMany('students', this.students);
         await idbClear('payments'); await idbPutMany('payments', this.payments);
@@ -312,27 +364,9 @@
         } catch (e) { /* mirror is best-effort */ }
       });
     },
-    _scheduleSync() { dirty = true; clearTimeout(syncTimer); syncTimer = setTimeout(() => this._syncNow(), 350); },
-    async _syncNow() {
-      if (syncing) { syncAgain = true; return; }
-      syncing = true;
-      try {
-        const r = await fetch('/api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ baseVersion, state: this._snapshot() }) });
-        if (r.status === 409) {
-          this._applyServer(await r.json());
-          U.toast('Reloaded latest data (another device was editing)', 'error');
-          if (w.Router && w.Router.render) w.Router.render();
-        } else if (r.ok) { baseVersion = (await r.json()).version; dirty = false; }
-      } catch (e) { /* offline — will retry on next change */ }
-      syncing = false;
-      if (syncAgain) { syncAgain = false; this._scheduleSync(); }
-    },
-    // force any pending change to the server now (called on logout / tab close)
-    async flush() {
-      if (!serverMode || !dirty) return;
-      if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
-      await this._syncNow();
-    },
+    _scheduleSync() { dirty = true; },
+    async _syncNow() {},
+    async flush() {},
 
     async load() {
       if (useIDB) {
@@ -426,23 +460,35 @@
       while (list.some(x => x.key === k)) k = base + '_' + (i++);
       return k;
     },
+    async _saveSubItems() {
+      if (serverMode && this.meta && this.meta.subItems) {
+        try {
+          await fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: 'subItems', value: this.meta.subItems })
+          });
+        } catch (e) {}
+      }
+      await this.persist();
+    },
     async addSubItem(head, label) {
       label = String(label || '').trim(); if (!label) throw new Error('Name is required');
       const list = this._subList(head);
       if (list.some(x => x.label.toLowerCase() === label.toLowerCase())) throw new Error('That item already exists');
       list.push({ key: this._slugSub(head, label), label });
-      this.recomputeAll(); await this.persist();
+      this.recomputeAll(); await this._saveSubItems();
     },
     async renameSubItem(head, key, label) {
       label = String(label || '').trim(); if (!label) throw new Error('Name is required');
       const it = this._subList(head).find(x => x.key === key); if (it) it.label = label;
-      await this.persist();
+      await this._saveSubItems();
     },
     async removeSubItem(head, key) {
       const list = this._subList(head);
       this.meta.subItems[head] = list.filter(x => x.key !== key);
       this.students.forEach(s => { if (s.subs && s.subs[head]) delete s.subs[head][key]; });
-      this.recomputeAll(); await this.persist();
+      this.recomputeAll(); await this._saveSubItems();
     },
     // ensure a student has an entry for every configured sub-item (migrating any
     // legacy single-head amount into a "General" item so nothing is lost)
