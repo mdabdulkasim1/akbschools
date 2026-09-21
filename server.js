@@ -1002,7 +1002,7 @@ const server = http.createServer(async (req, res) => {
       }
       return sendJSON(res, 200, { version: DB.version });
     }
-    if (url.startsWith('/api/students') && (req.method === 'PUT' || req.method === 'POST')) {
+    if (url.startsWith('/api/students') && !url.endsWith('/report') && (req.method === 'PUT' || req.method === 'POST')) {
       const body = JSON.parse(await readBody(req));
       const actor = getActor(req, body);
       const s = body.student || body;
