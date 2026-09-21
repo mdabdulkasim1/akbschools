@@ -168,7 +168,16 @@ async function loadDBFromMySQL(force) {
     const reportMap = {};
     for (const rep of repRows) {
       try {
-        reportMap[rep.student_id] = typeof rep.report_json === 'string' ? JSON.parse(rep.report_json) : rep.report_json;
+        let repObj = null;
+        if (rep.report_json) {
+          repObj = typeof rep.report_json === 'string' ? JSON.parse(rep.report_json) : rep.report_json;
+        } else if (rep.marks_json) {
+          const marks = typeof rep.marks_json === 'string' ? JSON.parse(rep.marks_json) : rep.marks_json;
+          repObj = { marks: marks || {}, remarks: rep.remarks || '' };
+        }
+        if (repObj) {
+          reportMap[rep.student_id] = repObj;
+        }
       } catch (e) {}
     }
 
@@ -451,12 +460,14 @@ async function saveStudentInMySQL(p, s, stateMeta, actor) {
   // 6. Insert/Update Student Report Cards
   if (s.report && typeof s.report === 'object') {
     const reportJson = JSON.stringify(s.report);
+    const marksJson = JSON.stringify(s.report.marks || {});
+    const remarksStr = s.report.remarks || '';
     subTasks.push(p.query(
-      `INSERT INTO report_cards (student_id, report_json, created_by, updated_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, NOW(), NOW())
-       ON DUPLICATE KEY UPDATE report_json=VALUES(report_json), updated_by=VALUES(updated_by), updated_at=NOW()`,
-      [s.id, reportJson, actor, actor]
-    ).catch(() => {}));
+      `INSERT INTO report_cards (student_id, term, report_json, marks_json, remarks, created_by, updated_by, created_at, updated_at)
+       VALUES (?, 'Term I', ?, ?, ?, ?, ?, NOW(), NOW())
+       ON DUPLICATE KEY UPDATE report_json=VALUES(report_json), marks_json=VALUES(marks_json), remarks=VALUES(remarks), updated_by=VALUES(updated_by), updated_at=NOW()`,
+      [s.id, reportJson, marksJson, remarksStr, actor, actor]
+    ).catch(err => console.warn('[Batch ReportCard MySQL Update Warn]', err.message)));
   }
 
   await Promise.all(subTasks);
@@ -1248,6 +1259,13 @@ const server = http.createServer(async (req, res) => {
       }
       return sendJSON(res, 200, { ok: true, version: DB.version });
     }
+    if (url.startsWith('/api/students/') && url.endsWith('/report') && req.method === 'GET') {
+      const parts = url.split('/');
+      const id = decodeURIComponent(parts[3]);
+      if (hasMySQL()) { try { await loadDBFromMySQL(); } catch (e) {} }
+      const s = (DB.state && Array.isArray(DB.state.students)) ? DB.state.students.find(x => x.id === id) : null;
+      return sendJSON(res, 200, (s && s.report) ? s.report : {});
+    }
     if (url.startsWith('/api/students/') && url.endsWith('/report') && (req.method === 'POST' || req.method === 'PUT')) {
       const parts = url.split('/');
       const id = decodeURIComponent(parts[3]);
@@ -1270,11 +1288,13 @@ const server = http.createServer(async (req, res) => {
           const p = getPool();
           if (p) {
             const reportJson = JSON.stringify(report || {});
+            const marksJson = JSON.stringify(report.marks || {});
+            const remarksStr = report.remarks || '';
             await p.query(
-              `INSERT INTO report_cards (student_id, report_json, created_by, updated_by, created_at, updated_at)
-               VALUES (?, ?, ?, ?, NOW(), NOW())
-               ON DUPLICATE KEY UPDATE report_json=VALUES(report_json), updated_by=VALUES(updated_by), updated_at=NOW()`,
-              [id, reportJson, actor, actor]
+              `INSERT INTO report_cards (student_id, term, report_json, marks_json, remarks, created_by, updated_by, created_at, updated_at)
+               VALUES (?, 'Term I', ?, ?, ?, ?, ?, NOW(), NOW())
+               ON DUPLICATE KEY UPDATE report_json=VALUES(report_json), marks_json=VALUES(marks_json), remarks=VALUES(remarks), updated_by=VALUES(updated_by), updated_at=NOW()`,
+              [id, reportJson, marksJson, remarksStr, actor, actor]
             ).catch(err => console.warn('[Direct ReportCard MySQL Update Warn]', err.message));
           }
         }

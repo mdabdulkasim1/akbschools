@@ -958,12 +958,17 @@
       s.reportUpdatedAt = new Date().toISOString();
       if (serverMode) {
         try {
-          await fetch('/api/students/' + encodeURIComponent(id) + '/report', {
+          const res = await fetch('/api/students/' + encodeURIComponent(id) + '/report', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-User-Name': this.currentUser ? this.currentUser.username : 'admin' },
             body: JSON.stringify({ report })
           });
-        } catch (e) {}
+          if (!res.ok) {
+            console.error('[Store] Report card save failed:', await res.text());
+          }
+        } catch (e) {
+          console.error('[Store] Report card save network error:', e);
+        }
       }
       await this.persist();
     },

@@ -359,7 +359,7 @@ tr.row-absent{background:var(--red-l)}
 
 </style>
 <div id="globalProgressBar" class="global-progress-bar"></div>
-  <div id="app">
+  <div id="app" style="display: none;">
     <aside class="sidebar" id="sidebar">
       <div class="brand">
         <div class="brand-logo"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAgMTIwIiByb2xlPSJpbWciIGFyaWEtbGFiZWw9IkFLQiBTY2hvb2wgb2YgRXhjZWxsZW5jZSI+CiAgPGRlZnM+PHN0eWxlPi5te2ZpbGw6IzdhMTQyMH0uY3tmaWxsOiNmNmVlZGF9LmJ7ZmlsbDojMjI0MDlhfTwvc3R5bGU+PC9kZWZzPgogIDwhLS0gY3Jvd24gLS0+CiAgPGcgY2xhc3M9Im0iPgogICAgPHBhdGggZD0iTTQ1IDMxIEw0MCAxNSBMNTAgMjIgTDYwIDkgTDcwIDIyIEw4MCAxNSBMNzUgMzEgWiIvPgogICAgPGNpcmNsZSBjeD0iNjAiIGN5PSI2IiByPSIzIi8+PGNpcmNsZSBjeD0iNDAiIGN5PSIxMiIgcj0iMi40Ii8+PGNpcmNsZSBjeD0iODAiIGN5PSIxMiIgcj0iMi40Ii8+CiAgPC9nPgogIDwhLS0gc2hpZWxkOiBtYXJvb24gYm9yZGVyICsgY3JlYW0gaW50ZXJpb3IgLS0+CiAgPHBhdGggZD0iTTMzIDMzIEg4NyBWNjQgQzg3IDg0IDc1IDk1IDYwIDEwMSBDNDUgOTUgMzMgODQgMzMgNjQgWiIgY2xhc3M9Im0iLz4KICA8cGF0aCBkPSJNMzggMzggSDgyIFY2MyBDODIgODAgNzIgODkgNjAgOTUgQzQ4IDg5IDM4IDgwIDM4IDYzIFoiIGNsYXNzPSJjIi8+CiAgPCEtLSBBS0IgLS0+CiAgPHRleHQgeD0iNjAiIHk9IjY1IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0iR2VvcmdpYSwnVGltZXMgTmV3IFJvbWFuJyxzZXJpZiIgZm9udC13ZWlnaHQ9IjgwMCIgZm9udC1zaXplPSIyMyIgY2xhc3M9Im0iIGxldHRlci1zcGFjaW5nPSItMSI+QUtCPC90ZXh0PgogIDwhLS0gc3RhcnMgLS0+CiAgPHRleHQgeD0iNjAiIHk9Ijc1IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjcuNSIgY2xhc3M9ImIiIGxldHRlci1zcGFjaW5nPSIxLjUiPiYjOTczMzsmIzk3MzM7JiM5NzMzOyYjOTczMzsmIzk3MzM7PC90ZXh0PgogIDwhLS0gb3BlbiBib29rIC0tPgogIDxnPgogICAgPHBhdGggZD0iTTQ5IDgwIEM1MyA3NyA1NyA3NyA2MCA3OSBDNjMgNzcgNjcgNzcgNzEgODAgTDcxIDkxIEM2NyA4OCA2MyA4OCA2MCA5MCBDNTcgODggNTMgODggNDkgOTEgWiIgY2xhc3M9Im0iLz4KICAgIDxsaW5lIHgxPSI2MCIgeTE9Ijc5IiB4Mj0iNjAiIHkyPSI5MCIgc3Ryb2tlPSIjZjZlZWRhIiBzdHJva2Utd2lkdGg9IjEuMiIvPgogIDwvZz4KICA8IS0tIGJsdWUgZmxvdXJpc2hlcyAtLT4KICA8ZyBmaWxsPSJub25lIiBzdHJva2U9IiMyMjQwOWEiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIj4KICAgIDxwYXRoIGQ9Ik0zMiA2NiBDMjIgNjAgMTUgNjMgMTEgNzEgQzE3IDY3IDIzIDY4IDI3IDczIEMyOSA2OSAzMSA2OCAzMyA2OSIvPgogICAgPHBhdGggZD0iTTg4IDY2IEM5OCA2MCAxMDUgNjMgMTA5IDcxIEMxMDMgNjcgOTcgNjggOTMgNzMgQzkxIDY5IDg5IDY4IDg3IDY5Ii8+CiAgPC9nPgo8L3N2Zz4K" alt="AKB School of Excellence" /></div>
@@ -801,7 +801,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
   let db = null;
   let useIDB = true;
   // server-shared-state mode (set at init if /api/state is reachable)
-  let serverMode = false, baseVersion = 0, syncTimer = null, syncing = false, syncAgain = false, dirty = false;
+  let serverMode = typeof window !== 'undefined' && window.location && String(window.location.protocol).indexOf('http') === 0, baseVersion = 0, syncTimer = null, syncing = false, syncAgain = false, dirty = false;
 
   const Store = {
     students: [],   // in-memory cache
@@ -817,37 +817,101 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
 
     serverMode() { return serverMode; },
 
-    async init() {
-      // Prefer shared server state (all devices see one dataset)
+    async fetchUsers() {
       try {
-        const r = await fetch('/api/state', { cache: 'no-store' });
-        if (r.ok) { serverMode = true; this._applyServer(await r.json()); }
-      } catch (e) { serverMode = false; }
-
-      if (!serverMode) {
-        try { db = await openDB(); } catch (e) { console.warn('IndexedDB unavailable, using localStorage', e); useIDB = false; }
-        await this.load();
-      } else if (!this.students.length) {
-        // Server is empty on first connect — migrate this browser's saved data (if any)
-        try {
-          if (!db) { try { db = await openDB(); } catch (e) { db = null; } }
-          if (db) {
-            const local = await idbAll('students');
-            if (local && local.length) {
-              this.students = local;
-              this.payments = (await idbAll('payments')) || [];
-              this.users = (await idbAll('users')) || [];
-              const mr = await idbAll('meta'); this.meta = (mr[0] && mr[0].value) || this.meta;
-              U.toast('Uploading this device’s saved data to the server…', 'success');
-            }
+        const r = await fetch('/api/users', { cache: 'no-store' });
+        if (r.ok) { this.users = await r.json(); serverMode = true; return true; }
+      } catch (e) {}
+      return false;
+    },
+    async fetchStudents() {
+      try {
+        const r = await fetch('/api/students', { cache: 'no-store' });
+        if (r.ok) {
+          const list = await r.json();
+          if (Array.isArray(list) && list.length > 0) {
+            this.students = list;
+            this.recomputeAll();
+            serverMode = true;
+            return true;
           }
-        } catch (e) {}
-      }
+        }
+      } catch (e) {}
+      return false;
+    },
+    async fetchPayments() {
+      try {
+        const r = await fetch('/api/payments', { cache: 'no-store' });
+        if (r.ok) {
+          const list = await r.json();
+          if (Array.isArray(list) && list.length > 0) {
+            this.payments = list;
+            serverMode = true;
+            return true;
+          }
+        }
+      } catch (e) {}
+      return false;
+    },
+    async fetchFeeHeads() {
+      try {
+        const r = await fetch('/api/fee-heads', { cache: 'no-store' });
+        if (r.ok) {
+          const list = await r.json();
+          if (Array.isArray(list) && list.length) { this.feeHeads = list; rebuildHeads(this.feeHeads); }
+          serverMode = true;
+          return true;
+        }
+      } catch (e) {}
+      return false;
+    },
+    async fetchSettings() {
+      try {
+        const r = await fetch('/api/settings', { cache: 'no-store' });
+        if (r.ok) {
+          this.meta = (await r.json()) || {};
+          if (Array.isArray(this.meta.feeHeads) && this.meta.feeHeads.length) { this.feeHeads = this.meta.feeHeads; rebuildHeads(this.feeHeads); }
+          serverMode = true;
+          return true;
+        }
+      } catch (e) {}
+      return false;
+    },
+    async fetchAttendance() {
+      try {
+        const r = await fetch('/api/attendance', { cache: 'no-store' });
+        if (r.ok) {
+          const att = await r.json();
+          if (!this.meta) this.meta = {};
+          this.meta.attendance = att || {};
+          serverMode = true;
+          return true;
+        }
+      } catch (e) {}
+      return false;
+    },
+    async fetchHolidays() {
+      try {
+        const r = await fetch('/api/holidays', { cache: 'no-store' });
+        if (r.ok) {
+          const hol = await r.json();
+          if (!this.meta) this.meta = {};
+          this.meta.holidays = hol || {};
+          serverMode = true;
+          return true;
+        }
+      } catch (e) {}
+      return false;
+    },
 
-      // seed only when truly empty (never clobber existing server data)
-      if (!this.meta.seeded && !this.students.length) await this.seed();
-      else if (!this.meta.seeded) this.meta.seeded = true;
+    async init() {
+      // Zero API calls on initial boot — load local storage/IndexedDB structure
+      if (useIDB) {
+        try { db = await openDB(); } catch (e) { useIDB = false; }
+      }
+      await this.load();
       if (!this.users.length) await this.seedUsers();
+      if (!this.students.length) await this.seed();
 
       if (!Array.isArray(this.meta.feeHeads) || !this.meta.feeHeads.length) {
         this.meta.feeHeads = DEFAULT_FEE_HEADS.map(h => Object.assign({}, h));
@@ -855,31 +919,23 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       this.feeHeads = this.meta.feeHeads;
       rebuildHeads(this.feeHeads);
       this.migrateLegacyHeads(); this.ensureStudentHeads();
-      await this.persist(); // pushes seed/migration to server (or writes locally)
       this.recomputeAll();
 
-      // save any pending change before the tab is closed/hidden so the last
-      // transaction is never lost (keepalive lets the request finish on unload)
-      if (typeof window !== 'undefined' && !this._unloadHooked) {
-        this._unloadHooked = true;
-        const beacon = () => {
-          if (!serverMode || !dirty) return;
-          try {
-            fetch('/api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, keepalive: true, body: JSON.stringify({ baseVersion, state: this._snapshot() }) }).then(() => { dirty = false; }).catch(() => {});
-          } catch (e) {}
-        };
-        window.addEventListener('pagehide', beacon);
-        window.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') beacon(); });
-      }
       return this;
     },
 
     async refresh() {
       try {
-        const r = await fetch('/api/state', { cache: 'no-store' });
-        if (r.ok) {
+        const results = await Promise.all([
+          this.fetchUsers(),
+          this.fetchSettings(),
+          this.fetchFeeHeads(),
+          this.fetchStudents(),
+          this.fetchPayments()
+        ]);
+        if (results.some(Boolean)) {
           serverMode = true;
-          this._applyServer(await r.json());
+          this.recomputeAll();
           this._mirrorLocal();
           return true;
         }
@@ -887,7 +943,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       return false;
     },
 
-    /* ---- persistence (server if available, else IndexedDB/localStorage) ---- */
+    /* ---- persistence (local IndexedDB/localStorage backup) ---- */
     _snapshot() { return { students: this.students, payments: this.payments, users: this.users, meta: this.meta }; },
     _applyServer(dbObj) {
       baseVersion = (dbObj && dbObj.version) || 0;
@@ -900,11 +956,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       this.recomputeAll();
     },
     async persist() {
-      if (serverMode) {
-        this._scheduleSync();
-        this._mirrorLocal(); // keep a local copy so this device can recover if the server resets
-        return;
-      }
+      this._mirrorLocal();
       if (useIDB) {
         await idbClear('students'); await idbPutMany('students', this.students);
         await idbClear('payments'); await idbPutMany('payments', this.payments);
@@ -931,27 +983,9 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
         } catch (e) { /* mirror is best-effort */ }
       });
     },
-    _scheduleSync() { dirty = true; clearTimeout(syncTimer); syncTimer = setTimeout(() => this._syncNow(), 350); },
-    async _syncNow() {
-      if (syncing) { syncAgain = true; return; }
-      syncing = true;
-      try {
-        const r = await fetch('/api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ baseVersion, state: this._snapshot() }) });
-        if (r.status === 409) {
-          this._applyServer(await r.json());
-          U.toast('Reloaded latest data (another device was editing)', 'error');
-          if (w.Router && w.Router.render) w.Router.render();
-        } else if (r.ok) { baseVersion = (await r.json()).version; dirty = false; }
-      } catch (e) { /* offline — will retry on next change */ }
-      syncing = false;
-      if (syncAgain) { syncAgain = false; this._scheduleSync(); }
-    },
-    // force any pending change to the server now (called on logout / tab close)
-    async flush() {
-      if (!serverMode || !dirty) return;
-      if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
-      await this._syncNow();
-    },
+    _scheduleSync() { dirty = true; },
+    async _syncNow() {},
+    async flush() {},
 
     async load() {
       if (useIDB) {
@@ -1045,23 +1079,35 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       while (list.some(x => x.key === k)) k = base + '_' + (i++);
       return k;
     },
+    async _saveSubItems() {
+      if (serverMode && this.meta && this.meta.subItems) {
+        try {
+          await fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: 'subItems', value: this.meta.subItems })
+          });
+        } catch (e) {}
+      }
+      await this.persist();
+    },
     async addSubItem(head, label) {
       label = String(label || '').trim(); if (!label) throw new Error('Name is required');
       const list = this._subList(head);
       if (list.some(x => x.label.toLowerCase() === label.toLowerCase())) throw new Error('That item already exists');
       list.push({ key: this._slugSub(head, label), label });
-      this.recomputeAll(); await this.persist();
+      this.recomputeAll(); await this._saveSubItems();
     },
     async renameSubItem(head, key, label) {
       label = String(label || '').trim(); if (!label) throw new Error('Name is required');
       const it = this._subList(head).find(x => x.key === key); if (it) it.label = label;
-      await this.persist();
+      await this._saveSubItems();
     },
     async removeSubItem(head, key) {
       const list = this._subList(head);
       this.meta.subItems[head] = list.filter(x => x.key !== key);
       this.students.forEach(s => { if (s.subs && s.subs[head]) delete s.subs[head][key]; });
-      this.recomputeAll(); await this.persist();
+      this.recomputeAll(); await this._saveSubItems();
     },
     // ensure a student has an entry for every configured sub-item (migrating any
     // legacy single-head amount into a "General" item so nothing is lost)
@@ -1531,12 +1577,17 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       s.reportUpdatedAt = new Date().toISOString();
       if (serverMode) {
         try {
-          await fetch('/api/students/' + encodeURIComponent(id) + '/report', {
+          const res = await fetch('/api/students/' + encodeURIComponent(id) + '/report', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-User-Name': this.currentUser ? this.currentUser.username : 'admin' },
             body: JSON.stringify({ report })
           });
-        } catch (e) {}
+          if (!res.ok) {
+            console.error('[Store] Report card save failed:', await res.text());
+          }
+        } catch (e) {
+          console.error('[Store] Report card save network error:', e);
+        }
       }
       await this.persist();
     },
@@ -4510,7 +4561,45 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     return Store.canAccess(pageOf(name));
   }
 
-  function route() {
+  async function ensureModuleData(name) {
+    const page = pageOf(name);
+    switch (page) {
+      case 'dashboard':
+        await Promise.all([Store.fetchSettings(), Store.fetchFeeHeads(), Store.fetchStudents(), Store.fetchPayments()]);
+        break;
+      case 'students':
+      case 'student':
+        await Promise.all([Store.fetchSettings(), Store.fetchFeeHeads(), Store.fetchStudents()]);
+        break;
+      case 'collect':
+      case 'collections':
+        await Promise.all([Store.fetchSettings(), Store.fetchFeeHeads(), Store.fetchStudents(), Store.fetchPayments()]);
+        break;
+      case 'reports':
+      case 'business':
+        await Promise.all([Store.fetchSettings(), Store.fetchFeeHeads(), Store.fetchStudents(), Store.fetchPayments()]);
+        break;
+      case 'attendance':
+      case 'attreport':
+        await Promise.all([Store.fetchStudents(), Store.fetchAttendance(), Store.fetchHolidays()]);
+        break;
+      case 'marks':
+      case 'academics':
+        await Promise.all([Store.fetchStudents(), Store.fetchSettings()]);
+        break;
+      case 'users':
+        await Store.fetchUsers();
+        break;
+      case 'data':
+      case 'audit':
+        await Promise.all([Store.fetchSettings(), Store.fetchFeeHeads()]);
+        break;
+      default:
+        await Promise.all([Store.fetchSettings(), Store.fetchFeeHeads()]);
+    }
+  }
+
+  async function route() {
     const { seg, params } = parseHash();
     let name = seg[0];
     if (!allowed(name)) {
@@ -4520,6 +4609,9 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       if (location.hash.replace(/^#\/?/, '').split('/')[0] !== land) { location.hash = '#/' + land; return; }
     }
     try {
+      // Fetch only the data required for this module on-demand when entering the route
+      await ensureModuleData(name);
+
       switch (name) {
         case 'dashboard': setActive('dashboard'); Views.dashboard(); break;
         case 'students': setActive('students'); Views.students(params); break;
@@ -4597,6 +4689,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
 
   let wired = false;
   function startApp() {
+    document.getElementById('app').style.display = '';
     applyRoleUI();
     if (!wired) {
       wireGlobalSearch();
@@ -4614,13 +4707,14 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     try {
       await Store.init();
       const u = Store.restoreSession();
-      if (u) startApp(u);
-      else Auth.showLogin(startApp);
+      if (!u) {
+        Auth.showLogin(startApp);
+      } else {
+        startApp(u);
+      }
     } catch (e) {
       console.error(e);
-      document.getElementById('view').innerHTML =
-        '<div class="empty">Failed to load data: ' + U.esc(e.message) +
-        '<br><br>If you opened this file directly, try a local server:<br><code>python3 -m http.server</code> then open <code>http://localhost:8000</code></div>';
+      Auth.showLogin(startApp);
     }
   }
 
