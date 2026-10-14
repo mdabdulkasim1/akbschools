@@ -338,16 +338,24 @@
     },
     async persist() {
       this._mirrorLocal();
-      if (useIDB) {
-        await idbClear('students'); await idbPutMany('students', this.students);
-        await idbClear('payments'); await idbPutMany('payments', this.payments);
-        await idbClear('users'); await idbPutMany('users', this.users);
-        await idbPut('meta', { id: 'meta', value: this.meta });
+      if (useIDB && db) {
+        try {
+          await idbClear('students'); await idbPutMany('students', this.students);
+          await idbClear('payments'); await idbPutMany('payments', this.payments);
+          await idbClear('users'); await idbPutMany('users', this.users);
+          await idbPut('meta', { id: 'meta', value: this.meta });
+        } catch (e) {
+          console.warn('IDB persist error:', e);
+        }
       } else {
-        LS.setItem('akb_students', JSON.stringify(this.students));
-        LS.setItem('akb_payments', JSON.stringify(this.payments));
-        LS.setItem('akb_users', JSON.stringify(this.users));
-        LS.setItem('akb_meta', JSON.stringify(this.meta));
+        try {
+          LS.setItem('akb_students', JSON.stringify(this.students));
+          LS.setItem('akb_payments', JSON.stringify(this.payments));
+          LS.setItem('akb_users', JSON.stringify(this.users));
+          LS.setItem('akb_meta', JSON.stringify(this.meta));
+        } catch (e) {
+          console.warn('LS persist error:', e);
+        }
       }
     },
     // best-effort background copy of the shared state into this browser's IndexedDB
@@ -410,7 +418,12 @@
     },
 
     /* ---- students ---- */
-    getStudent(id) { return this.students.find(s => s.id === id); },
+    getStudent(id) { return this.students.find(s => s && String(s.id) === String(id)); },
+
+    isStudentActive(s) {
+      if (!s) return false;
+      return s.status !== 'disabled';
+    },
 
     studentTotals(s) {
       let total = 0, paid = 0;
@@ -419,6 +432,37 @@
         total += Number(h.total) || 0; paid += Number(h.paid) || 0;
       });
       return { total, paid, balance: total - paid };
+    },
+
+    studentSummaryTotals(s) {
+      const t = this.studentTotals(s);
+      if (!this.isStudentActive(s)) {
+        return { total: t.paid, paid: t.paid, balance: 0, originalTotal: t.total, originalBalance: t.balance, isDisabled: true };
+      }
+      return { total: t.total, paid: t.paid, balance: t.balance, originalTotal: t.total, originalBalance: t.balance, isDisabled: false };
+    },
+
+    async setStudentStatus(id, status) {
+      const s = this.getStudent(id);
+      if (!s) throw new Error('Student not found (ID: ' + id + ')');
+      if (status === 'active' && s.status === 'disabled' && !this.isAdmin()) {
+        throw new Error('Only Administrator can enable a disabled student');
+      }
+      s.status = status === 'disabled' ? 'disabled' : 'active';
+      await this.saveStudent(s);
+      return s;
+    },
+
+    async toggleStudentStatus(id) {
+      const s = this.getStudent(id);
+      if (!s) throw new Error('Student not found (ID: ' + id + ')');
+      const nextStatus = (s.status === 'disabled') ? 'active' : 'disabled';
+      if (nextStatus === 'active' && !this.isAdmin()) {
+        throw new Error('Only Administrator can enable a disabled student');
+      }
+      s.status = nextStatus;
+      await this.saveStudent(s);
+      return s;
     },
 
     recompute(s) {
@@ -716,7 +760,7 @@
         father: data.father || '', mother: data.mother || '', location: data.location || '', dropLocation: data.dropLocation || '',
         transportType: data.transportType || '', vehicle: data.vehicle || '', contact: data.contact || '',
         religion: data.religion || '', discount: Number(data.discount) || 0, admission: data.admission || 'NEW',
-        sportsActivity: data.sportsActivity || '', photo: data.photo || '',
+        sportsActivity: data.sportsActivity || '', photo: data.photo || '', status: data.status || 'active',
         marks: { english: '', maths: '', science: '' }, fees
       };
       await this.saveStudent(s);
@@ -811,9 +855,11 @@
 
     /* ---- students: edit ---- */
     async saveStudent(s) {
+      s.status = s.status || 'active';
       this.recompute(s);
-      const i = this.students.findIndex(x => x.id === s.id);
+      const i = this.students.findIndex(x => x && String(x.id) === String(s.id));
       if (i < 0) this.students.push(s);
+      else this.students[i] = s;
       if (serverMode) {
         try {
           await fetch('/api/students/' + encodeURIComponent(s.id), {
@@ -825,14 +871,18 @@
         await this.persist();
         return;
       }
-      if (useIDB && db) await idbPut('students', s);
-      else LS.setItem('akb_students', JSON.stringify(this.students));
+      try {
+        if (useIDB && db) await idbPut('students', s);
+        else LS.setItem('akb_students', JSON.stringify(this.students));
+      } catch (e) {
+        console.warn('saveStudent local persist warn:', e);
+      }
     },
     async deleteStudent(id, withPayments) {
-      const i = this.students.findIndex(s => s.id === id);
+      const i = this.students.findIndex(s => s && String(s.id) === String(id));
       if (i < 0) return;
       this.students.splice(i, 1);
-      if (withPayments) this.payments = this.payments.filter(p => p.studentId !== id);
+      if (withPayments) this.payments = this.payments.filter(p => String(p.studentId) !== String(id));
       if (serverMode) {
         try {
           await fetch('/api/students/' + encodeURIComponent(id), { method: 'DELETE' });
@@ -840,8 +890,12 @@
         await this.persist();
         return;
       }
-      if (useIDB && db) await idbDelete('students', id);
-      else LS.setItem('akb_students', JSON.stringify(this.students));
+      try {
+        if (useIDB && db) await idbDelete('students', id);
+        else LS.setItem('akb_students', JSON.stringify(this.students));
+      } catch (e) {
+        console.warn('deleteStudent local persist warn:', e);
+      }
     },
 
     /* ---- attendance (meta.attendance = { 'YYYY-MM-DD': { studentId: 'P'|'A' } }) ---- */
@@ -1125,7 +1179,7 @@
       } catch (e) {}
       return null;
     },
-    isAdmin() { return this.currentUser && this.currentUser.role === 'admin'; },
+    isAdmin() { return !!(this.currentUser && this.currentUser.role === 'admin'); },
 
     /* ---- backup ---- */
     exportAll(includeUsers) {

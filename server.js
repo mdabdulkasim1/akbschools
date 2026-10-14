@@ -773,11 +773,29 @@ async function buildWorkbook() {
   wb.creator = 'AKB Fee Collection';
   const st = DB.state; const heads = feeHeads();
   const students = st.students || [], payments = st.payments || [];
-  const tot = s => heads.reduce((a, h) => { const f = (s.fees || {})[h.key] || {}; return { total: a.total + (+f.total || 0), paid: a.paid + (+f.paid || 0) }; }, { total: 0, paid: 0 });
+  const isAct = s => s.status !== 'disabled';
+  const tot = s => heads.reduce((a, h) => {
+    const f = (s.fees || {})[h.key] || {};
+    const p = +f.paid || 0;
+    const t = isAct(s) ? (+f.total || 0) : p;
+    return { total: a.total + t, paid: a.paid + p };
+  }, { total: 0, paid: 0 });
 
-  // category + business summaries
-  const cat = heads.map(h => { let total = 0, paid = 0; students.forEach(s => { const f = (s.fees || {})[h.key] || {}; total += +f.total || 0; paid += +f.paid || 0; }); return { label: h.label, biz: BIZ_NAME[h.business] || '', total, paid, bal: total - paid }; });
+  // category + business summaries (future pending fees of disabled students are not calculated)
+  const cat = heads.map(h => {
+    let total = 0, paid = 0;
+    students.forEach(s => {
+      const f = (s.fees || {})[h.key] || {};
+      const p = +f.paid || 0;
+      const t = isAct(s) ? (+f.total || 0) : p;
+      total += t;
+      paid += p;
+    });
+    return { label: h.label, biz: BIZ_NAME[h.business] || '', total, paid, bal: total - paid };
+  });
   const gt = cat.reduce((a, c) => a + c.total, 0), gp = cat.reduce((a, c) => a + c.paid, 0);
+  const activeCount = students.filter(isAct).length;
+  const disabledCount = students.length - activeCount;
   const money = '#,##0';
 
   // Dashboard
@@ -785,9 +803,11 @@ async function buildWorkbook() {
   d.mergeCells('A1:E1'); d.getCell('A1').value = SCHOOL + ' — Fee Collection'; d.getCell('A1').font = { bold: true, size: 16, color: { argb: 'FF7A1420' } };
   d.getCell('A2').value = 'Backup generated: ' + new Date().toString();
   d.addRow([]);
-  d.addRow(['Students', students.length]);
+  d.addRow(['Active Students', activeCount]);
+  if (disabledCount > 0) d.addRow(['Disabled Students', disabledCount]);
   d.addRow(['Total Billed', gt]); d.addRow(['Collected', gp]); d.addRow(['Outstanding', gt - gp]);
-  [5, 6, 7].forEach(r => d.getCell('B' + r).numFmt = money);
+  const rowOffsets = disabledCount > 0 ? [6, 7, 8] : [5, 6, 7];
+  rowOffsets.forEach(r => d.getCell('B' + r).numFmt = money);
   d.addRow([]);
   const ch = d.addRow(['Fee Category', 'Business', 'Total', 'Collected', 'Outstanding', '% Paid']); ch.font = { bold: true };
   cat.forEach(c => { const r = d.addRow([c.label, c.biz, c.total, c.paid, c.bal, c.total ? Math.round(c.paid / c.total * 100) / 100 : 0]); ['C', 'D', 'E'].forEach(x => r.getCell(x).numFmt = money); r.getCell('F').numFmt = '0%'; });
@@ -795,13 +815,21 @@ async function buildWorkbook() {
 
   // Students
   const sh = wb.addWorksheet('Students');
-  const sHead = ['Student ID', 'Name', 'Grade', 'Father', 'Parent Mobile', 'Discount %'];
+  const sHead = ['Student ID', 'Name', 'Status', 'Grade', 'Father', 'Parent Mobile', 'Discount %'];
   heads.forEach(h => sHead.push(h.label + ' Total', h.label + ' Paid', h.label + ' Bal'));
   sHead.push('Grand Total', 'Grand Paid', 'Grand Balance');
   const shr = sh.addRow(sHead); shr.font = { bold: true }; sh.views = [{ state: 'frozen', ySplit: 1 }];
   students.forEach(s => {
-    const t = tot(s); const row = [s.id, s.name, s.grade, s.father, s.contact, Math.round((+s.discount || 0) * 100)];
-    heads.forEach(h => { const f = (s.fees || {})[h.key] || {}; row.push(+f.total || 0, +f.paid || 0, +f.balance || ((+f.total || 0) - (+f.paid || 0))); });
+    const isStudentActive = isAct(s);
+    const t = tot(s);
+    const row = [s.id, s.name, isStudentActive ? 'Active' : 'Disabled', s.grade, s.father, s.contact, Math.round((+s.discount || 0) * 100)];
+    heads.forEach(h => {
+      const f = (s.fees || {})[h.key] || {};
+      const p = +f.paid || 0;
+      const hTotal = isStudentActive ? (+f.total || 0) : p;
+      const hBal = isStudentActive ? (+f.balance || (hTotal - p)) : 0;
+      row.push(hTotal, p, hBal);
+    });
     row.push(t.total, t.paid, t.total - t.paid); sh.addRow(row);
   });
 
@@ -1008,7 +1036,14 @@ const server = http.createServer(async (req, res) => {
       const s = body.student || body;
       if (s && s.id) {
         if (!Array.isArray(DB.state.students)) DB.state.students = [];
-        const idx = DB.state.students.findIndex(x => x.id === s.id);
+        const idx = DB.state.students.findIndex(x => x && String(x.id) === String(s.id));
+        const existing = idx >= 0 ? DB.state.students[idx] : null;
+        if (existing && existing.status === 'disabled' && s.status === 'active') {
+          const userObj = (DB.state.users || []).find(u => u.username && u.username.toLowerCase() === String(actor).toLowerCase());
+          if (userObj && userObj.role !== 'admin') {
+            return sendJSON(res, 403, { error: 'Only Administrator can enable a disabled student' });
+          }
+        }
         const isNew = idx < 0;
         if (idx >= 0) DB.state.students[idx] = s; else DB.state.students.push(s);
         DB.version++;
@@ -1029,7 +1064,7 @@ const server = http.createServer(async (req, res) => {
       const actor = getActor(req);
       if (id) {
         if (Array.isArray(DB.state.students)) {
-          const idx = DB.state.students.findIndex(x => x.id === id);
+          const idx = DB.state.students.findIndex(x => x && String(x.id) === String(id));
           if (idx >= 0) DB.state.students.splice(idx, 1);
         }
         DB.version++;
@@ -1383,8 +1418,27 @@ const server = http.createServer(async (req, res) => {
       }
       return sendJSON(res, 200, { ok: true, version: DB.version });
     }
-    if (url === '/api/backup-status' && req.method === 'GET')
-      return sendJSON(res, 200, { serverMode: true, mysql: hasMySQL(), emailConfigured: emailConfigured(), to: BACKUP_EMAIL, day: BACKUP_DAY, hour: BACKUP_HOUR, lastBackupAt: DB.lastBackupAt, excel: !!ExcelJS, dataDir: DATA_DIR, version: DB.version, students: (DB.state.students || []).length, payments: (DB.state.payments || []).length, bootAt: BOOT_AT });
+    if (url === '/api/backup-status' && req.method === 'GET') {
+      const allSt = DB.state.students || [];
+      const activeSt = allSt.filter(s => s.status !== 'disabled').length;
+      return sendJSON(res, 200, {
+        serverMode: true,
+        mysql: hasMySQL(),
+        emailConfigured: emailConfigured(),
+        to: BACKUP_EMAIL,
+        day: BACKUP_DAY,
+        hour: BACKUP_HOUR,
+        lastBackupAt: DB.lastBackupAt,
+        excel: !!ExcelJS,
+        dataDir: DATA_DIR,
+        version: DB.version,
+        students: allSt.length,
+        activeStudents: activeSt,
+        disabledStudents: allSt.length - activeSt,
+        payments: (DB.state.payments || []).length,
+        bootAt: BOOT_AT
+      });
+    }
     if (url === '/api/backup.xlsx' && req.method === 'GET') {
       const buf = await buildWorkbook();
       res.writeHead(200, { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': 'attachment; filename="akb-fees-backup.xlsx"', 'Cache-Control': 'no-store' });

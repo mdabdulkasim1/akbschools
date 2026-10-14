@@ -150,10 +150,11 @@
         (s.name + ' ' + s.id + ' ' + (s.father || '') + ' ' + (s.contact || '')).toLowerCase().indexOf(q) >= 0
       ).slice(0, 12);
       box.innerHTML = rows.map(s => {
+        const isAct = Store.isStudentActive(s);
         const t = Store.studentTotals(s);
         return `<div class="sr-item" data-id="${U.esc(s.id)}">
-          <span>${U.esc(s.name)} <span class="muted">· ${U.esc(s.grade || '')} · ${U.esc(s.id)}</span></span>
-          <span class="sr-bal" style="color:${t.balance > 0 ? 'var(--red)' : 'var(--green)'}">${U.inr(t.balance)}</span></div>`;
+          <span>${U.esc(s.name)}${!isAct ? ' <span class="badge gray sm">Disabled</span>' : ''} <span class="muted">· ${U.esc(s.grade || '')} · ${U.esc(s.id)}</span></span>
+          <span class="sr-bal" style="color:${!isAct ? 'var(--muted)' : (t.balance > 0 ? 'var(--red)' : 'var(--green)')}">${!isAct ? '₹0 (Disabled)' : U.inr(t.balance)}</span></div>`;
       }).join('') || '<div class="sr-item muted">No match</div>';
       box.classList.add('open');
       box.querySelectorAll('[data-id]').forEach(el => el.onclick = () => {

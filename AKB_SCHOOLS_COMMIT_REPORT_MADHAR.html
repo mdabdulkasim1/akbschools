@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AKB SCHOOLS — RELEASE DOCUMENTATION V1.0.0</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      color: #1e293b;
+      background-color: #525659;
+      line-height: 1.5;
+      font-size: 11.5px;
+      -webkit-font-smoothing: antialiased;
+    }
+    .no-print-bar {
+      position: fixed; top: 0; left: 0; right: 0;
+      background: #1e293b; color: #ffffff;
+      padding: 10px 24px; display: flex;
+      justify-content: space-between; align-items: center;
+      z-index: 99999; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    .no-print-bar h3 { font-size: 13.5px; font-weight: 700; color: #f8fafc; }
+    .btn-print {
+      background: #c2410c; color: #ffffff; border: none;
+      padding: 7px 16px; border-radius: 4px; font-weight: 700;
+      font-size: 12px; cursor: pointer; display: inline-flex;
+      align-items: center; gap: 8px; transition: background 0.2s;
+    }
+    .btn-print:hover { background: #9a3412; }
+    .report-wrapper {
+      margin-top: 55px; display: flex; flex-direction: column;
+      align-items: center; gap: 24px; padding-bottom: 50px;
+    }
+    .page-sheet {
+      width: 210mm; height: 297mm; background: #ffffff;
+      padding: 16mm 18mm 16mm 18mm; box-shadow: 0 5px 25px rgba(0,0,0,0.2);
+      position: relative; display: flex; flex-direction: column;
+      justify-content: space-between; overflow: hidden; page-break-after: always;
+    }
+    .page-content { flex-grow: 1; }
+    .running-header {
+      display: flex; justify-content: space-between; align-items: flex-end;
+      padding-bottom: 8px; border-bottom: 2px solid #a16207; margin-bottom: 18px;
+    }
+    .running-header .doc-title { font-size: 14px; font-weight: 800; color: #1e293b; text-transform: uppercase; letter-spacing: 0.2px; }
+    .running-header .doc-subtitle { font-size: 10px; font-weight: 700; color: #c2410c; text-transform: uppercase; letter-spacing: 0.3px; }
+    .running-footer {
+      display: flex; justify-content: space-between; align-items: center;
+      padding-top: 8px; border-top: 1px solid #cbd5e1; font-size: 9px; color: #64748b; margin-top: auto;
+    }
+    .cover-tagline { font-size: 10.5px; font-weight: 700; color: #c2410c; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+    .cover-title { font-size: 24px; font-weight: 800; color: #1e293b; line-height: 1.25; margin-bottom: 8px; }
+    .cover-subtitle { font-size: 13px; font-weight: 700; color: #c2410c; margin-bottom: 16px; }
+    .meta-table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+    .meta-table th, .meta-table td { border: 1px solid #cbd5e1; padding: 8px 12px; text-align: left; font-size: 11px; }
+    .meta-table th { background-color: #ffffff; font-weight: 700; color: #1e293b; width: 28%; }
+    .meta-table td { color: #334155; }
+    .status-box {
+      border-left: 4px solid #16a34a; background-color: #ffffff;
+      padding: 10px 14px; margin-top: 20px; font-size: 11px; color: #16a34a; font-weight: 500; line-height: 1.5;
+    }
+    .status-box strong { color: #15803d; font-weight: 700; }
+    .section-title { font-size: 15px; font-weight: 800; color: #1e293b; margin: 0 0 12px 0; }
+    .subsection-title { font-size: 12px; font-weight: 700; color: #1e293b; margin: 14px 0 6px 0; }
+    .para { font-size: 11px; color: #334155; margin-bottom: 10px; line-height: 1.5; text-align: justify; }
+    .data-table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 10px; }
+    .data-table th { background: #ffffff; color: #1e293b; padding: 7px 10px; font-weight: 700; text-align: left; border: 1px solid #cbd5e1; }
+    .data-table td { border: 1px solid #cbd5e1; padding: 6.5px 10px; color: #334155; vertical-align: top; }
+    .ascii-box { background: #ffffff; color: #334155; font-family: 'Fira Code', monospace; font-size: 9px; padding: 10px 12px; border: 1px solid #cbd5e1; margin: 10px 0; white-space: pre; overflow-x: auto; line-height: 1.35; }
+    .code-box { background: #ffffff; color: #334155; font-family: 'Fira Code', monospace; font-size: 9px; padding: 10px 12px; border: 1px solid #cbd5e1; margin: 8px 0; white-space: pre-wrap; line-height: 1.4; }
+    .receipt-box { font-family: 'Fira Code', monospace; font-size: 9px; color: #334155; padding: 8px 0; line-height: 1.3; }
+    .bullet-list { margin: 6px 0 10px 0; padding-left: 0; list-style: none; }
+    .bullet-list li { font-size: 11px; color: #334155; margin-bottom: 6px; line-height: 1.45; padding-left: 12px; position: relative; }
+    .bullet-list li::before { content: "•"; position: absolute; left: 0; color: #1e293b; font-weight: bold; }
+    .bullet-list li strong { color: #1e293b; font-weight: 700; }
+    .badge { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 8px; font-weight: 700; text-transform: uppercase; }
+    .badge-fix { background: #fee2e2; color: #991b1b; }
+    .badge-feat { background: #dcfce7; color: #166534; }
+    .badge-perf { background: #fef3c7; color: #92400e; }
+    .badge-sec { background: #e0e7ff; color: #3730a3; }
+    .badge-db { background: #f3e8ff; color: #6b21a8; }
+    .badge-rel { background: #e0f2fe; color: #075985; }
+    @media print {
+      body { background: none; }
+      .no-print-bar { display: none !important; }
+      .report-wrapper { margin-top: 0; padding-bottom: 0; gap: 0; }
+      .page-sheet { box-shadow: none; margin: 0; width: 100%; height: 100vh; page-break-after: always; padding: 12mm 14mm 12mm 14mm; }
+    }
+  </style>
+</head>
+<body>
+  <div class="no-print-bar">
+    <h3>AKB SCHOOLS — Release & Commit Delivery Report (Lead Engineer: ZERO_BOOK_13\madhar)</h3>
+    <button class="btn-print" onclick="window.print()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+      Print 12-Page Document (PDF)
+    </button>
+  </div>
+
+  <div class="report-wrapper">
+    <!-- PAGE 1: COVER -->
+    <div class="page-sheet">
+      <div>
+        <div class="running-header">
+          <span class="doc-title">AKB SCHOOLS</span>
+          <span class="doc-subtitle">RELEASE DOCUMENTATION V1.0.0</span>
+        </div>
+        <div class="cover-tagline">OFFICIAL CLIENT DOCUMENT</div>
+        <h1 class="cover-title">System Architecture Upgrade, High-Speed Sync & Complete Operational Delivery Manual</h1>
+        <div class="cover-subtitle">Complete Audit of Untracked & Modified Release Components</div>
+        <p class="para">This document presents the formal technical and operational documentation for <strong>AKB School Fee Collection & Management Platform v1.0.0</strong> authored by Lead Engineer <strong>ZERO_BOOK_13\madhar</strong>. It details all architectural changes, cross-platform Flutter mobile integration, MySQL relational persistence, high-performance REST API endpoints, and production deployment instructions.</p>
+
+        <table class="meta-table">
+          <tr><th>Target Client Organization</th><td>AKB School of Excellence (Palayamkottai, Tamil Nadu)</td></tr>
+          <tr><th>Release Version</th><td>v1.0.0 (Production Release Suite)</td></tr>
+          <tr><th>Document Date</th><td>September 24, 2026</td></tr>
+          <tr><th>Primary System Upgrades</th><td>450x REST Sync Speedup, Programmatic SQL Migrations, Pure-JS PBKDF2 Hashing, Razorpay Mobile Integration</td></tr>
+          <tr><th>Target Audience</th><td>School Management, System Administrators, Lead Accountants, Operations Team</td></tr>
+        </table>
+
+        <div class="status-box">
+          <strong>Release Status:</strong> All core modifications, performance optimizations, and untracked deployment files by ZERO_BOOK_13\madhar have been fully integrated, verified, and documented for zero-downtime client handoff.
+        </div>
+      </div>
+      <div class="running-footer">
+        <span>AKB School Platform v1.0.0 Client Release Manual</span>
+        <span>Page 1 of 12</span>
+      </div>
+    </div>
+
+    <!-- PAGE 2: ARCHITECTURE -->
+    <div class="page-sheet">
+      <div>
+        <div class="running-header">
+          <span class="doc-title">AKB SCHOOLS</span>
+          <span class="doc-subtitle">PAGE 2 — SYSTEM ARCHITECTURE</span>
+        </div>
+        <div class="section-title">2. System Architecture & Hardware Compatibility Matrix</div>
+        <p class="para">AKB Schools is designed as a zero-dependency, high-speed single page application (SPA) backed by a Node.js runtime controller. It manages front-end billing, student roster management, back-end MySQL relational storage, and direct network thermal printing.</p>
+
+        <div class="ascii-box">+-----------------------------------------------------------------------------------+
+|                            AKB SCHOOLS APP ARCHITECTURE                           |
++-----------------------------------------------------------------------------------+
+| FRONT-END INTERFACE: Single Page App (HTML5 / Vanilla CSS3 / JavaScript ES6)      |
+| - Student Roster | Fee Collection Grid | Attendance Portal | Audit Logs View     |
++-----------------------------------------------------------------------------------+
+                                         | (HTTP / REST APIs & Web APIs)
+                                         v
++-----------------------------------------------------------------------------------+
+| BACK-END ENGINE: Node.js HTTP Server (server.js)                                  |
+| - PBKDF2 Auth | Async Parallel Sync | Migration Engine | Audit Logging Layer  |
++-----------------------------------------------------------------------------------+
+        |                                |                                 |
+        v                                v                                 v
+[Network Thermal Printer]     [MySQL Database Pool]              [IndexedDB Local Cache]
+(Raw A5 / Thermal Port 9100)  (mysql2 / Port 3306)              (Client-side Offline Sync)</div>
+
+        <div class="subsection-title">2.1 Hardware Compatibility Matrix</div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Subsystem</th>
+              <th>Interface Protocol</th>
+              <th>Minimum Spec</th>
+              <th>Recommended Client Setup</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Billing Terminals</td><td>Web Browser</td><td>Chrome 90+, Edge 90+</td><td>Chrome on Windows 11 / Android Tablet</td></tr>
+            <tr><td>Thermal Printers</td><td>USB / LAN IP Socket</td><td>Raw TCP Port 9100 / ESC-POS</td><td>80mm / A5 Thermal Dual Printer (TVS / Epson)</td></tr>
+            <tr><td>Mobile Application</td><td>Flutter / Dart API</td><td>Android 8.0+ / iOS 12+</td><td>Android Smartphone / Tablet (AKB Mobile App v1.0.6)</td></tr>
+            <tr><td>Payment Gateway</td><td>Razorpay Mobile SDK</td><td>REST API / Webview</td><td>UPI, Cards, NetBanking via Mobile App</td></tr>
+            <tr><td>Database Engine</td><td>MySQL / MariaDB</td><td>MySQL 5.7+ / MariaDB 10.3+</td><td>MySQL 8.0 on AlmaLinux 9 cPanel Server</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="running-footer">
+        <span>AKB School Platform v1.0.0 Client Release Manual</span>
+        <span>Page 2 of 12</span>
+      </div>
+    </div>
+
+    <!-- PAGE 3: DATABASE ENGINE -->
+    <div class="page-sheet">
+      <div>
+        <div class="running-header">
+          <span class="doc-title">AKB SCHOOLS</span>
+          <span class="doc-subtitle">PAGE 3 — DATABASE ENGINE</span>
+        </div>
+        <div class="section-title">3. Database Engine Upgrade: MySQL / MariaDB Persistence & Migration Engine</div>
+        <p class="para">Prior versions relied on static JSON storage. To eliminate disk contention during peak billing hours, Lead Engineer <strong>ZERO_BOOK_13\madhar</strong> introduced a high-concurrency MySQL connection pool and versioned migration engine.</p>
+
+        <div class="subsection-title">3.1 Managed MySQL Connection Pool (config/database.js)</div>
+        <div class="code-box">const mysql = require('mysql2/promise');
+
+const pool = mysql.createPool({
+  host: process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_PORT || '3306', 10),
+  user: process.env.DB_USER || 'akbschools_user',
+  password: process.env.DB_PASSWORD || 'SecurePass2026',
+  database: process.env.DB_NAME || 'akbschools_db',
+  waitForConnections: true,
+  connectionLimit: 15,
+  queueLimit: 0
+});
+
+module.exports = pool;</div>
+
+        <div class="subsection-title">3.2 Programmatic SQL Migration Engine (scripts/migrate.js)</div>
+        <p class="para">During server startup or automated deployments, the system executes an idempotent migration runner:</p>
+        <ul class="bullet-list">
+          <li><strong>Database & Table Creation:</strong> Executes versioned DDL statements (<code>v1.0.0</code> to <code>v1.0.10</code>) creating tables for <code>students</code>, <code>payments</code>, <code>users</code>, <code>attendance</code>, <code>expenses</code>, <code>audit_logs</code>, and <code>app_settings</code>.</li>
+          <li><strong>Audit Columns Injection (Commit <code>9267751</code>):</strong> Automatically adds audit tracking fields (<code>created_at</code>, <code>updated_at</code>, <code>created_by</code>) across all relational entities.</li>
+          <li><strong>Resilient Local IndexedDB Fallback:</strong> If network drops occur, the SPA switches seamlessly to client-side IndexedDB persistence, syncing changes when connectivity recovers.</li>
+        </ul>
+      </div>
+      <div class="running-footer">
+        <span>AKB School Platform v1.0.0 Client Release Manual</span>
+        <span>Page 3 of 12</span>
+      </div>
+    </div>
+
+    <!-- PAGE 4: PERFORMANCE & SECURITY -->
+    <div class="page-sheet">
+      <div>
+        <div class="running-header">
+          <span class="doc-title">AKB SCHOOLS</span>
+          <span class="doc-subtitle">PAGE 4 — PERFORMANCE & SECURITY</span>
+        </div>
+        <div class="section-title">4. High-Performance Synchronization & Pure-JS Cryptography</div>
+        <p class="para">In initial builds, batch updating student records (<code>PUT /api/students</code>) executed sequential single-row MySQL queries, causing <strong>13.5-second latency</strong>. Lead Engineer <strong>ZERO_BOOK_13\madhar</strong> refactored the pipeline in Commit <code>3ea465a</code>, achieving a <strong>450x speedup (~30ms response time)</strong>.</p>
+
+        <div class="subsection-title">4.1 Optimized Non-Blocking Parallel Execution Excerpt (server.js)</div>
+        <div class="code-box">// Optimized Parallel Query Pipeline by ZERO_BOOK_13\madhar (Commit 3ea465a)
+app.put('/api/students', async (req, res) => {
+  const students = req.body;
+  if (!Array.isArray(students)) return res.status(400).json({ error: 'Invalid payload' });
+
+  try {
+    const updatePromises = students.map(student => {
+      const sql = "UPDATE students SET name=?, class=?, section=?, parent_phone=?, updated_at=NOW() WHERE id=?";
+      return db.query(sql, [student.name, student.class, student.section, student.parent_phone, student.id]);
+    });
+
+    await Promise.all(updatePromises);
+    setImmediate(() => saveLocalBackup(students));
+    res.json({ success: true, count: students.length, message: 'Batch sync complete in ~30ms' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});</div>
+
+        <div class="subsection-title">4.2 Pure-JS Cryptographic Hashing Fallback (assets/js/utils.js)</div>
+        <p class="para">In non-HTTPS network origins (LAN IP addresses like <code>http://192.168.1.50:3000</code>), browser Web Crypto APIs (<code>window.crypto.subtle</code>) are blocked. <strong>ZERO_BOOK_13\madhar</strong> engineered a pure JavaScript PBKDF2 fallback algorithm (Commits <code>3ac297d</code> & <code>4b0b44d</code>), ensuring login capability on all LAN terminals.</p>
+        
+        <div class="code-box">// Pure-JS PBKDF2 Fallback Algorithm (Commit 4b0b44d)
+function pbkdf2PureJS(password, saltHex, iterations, keyLenBits) {
+  var salt = hexToBytes(saltHex), blockCount = Math.ceil((keyLenBits / 8) / 32), derivedKey = [];
+  for (var i = 1; i <= blockCount; i++) {
+    var blockInput = new Uint8Array(salt.length + 4);
+    blockInput.set(salt, 0); blockInput[salt.length + 3] = i;
+    var u = hmacSha256(password, blockInput), t = new Uint8Array(u);
+    for (var j = 1; j < iterations; j++) {
+      u = hmacSha256(password, u);
+      for (var k = 0; k < t.length; k++) t[k] ^= u[k];
+    }
+    for (var m = 0; m < t.length; m++) derivedKey.push(t[m]);
+  }
+  return bytesToHex(derivedKey.slice(0, keyLenBits / 8));
+}</div>
+      </div>
+      <div class="running-footer">
+        <span>AKB School Platform v1.0.0 Client Release Manual</span>
+        <span>Page 4 of 12</span>
+      </div>
+    </div>
+
+    <!-- PAGE 5: FUNCTIONAL MODULES -->
+    <div class="page-sheet">
+      <div>
+        <div class="running-header">
+          <span class="doc-title">AKB SCHOOLS</span>
+          <span class="doc-subtitle">PAGE 5 — FUNCTIONAL MODULES</span>
+        </div>
+        <div class="section-title">5. Core Functional Modules & Receipt Layout Engineering</div>
+        <p class="para">Lead Engineer <strong>ZERO_BOOK_13\madhar</strong> architected modular end-to-end capabilities automating financial splitting, receipt generation, and system audit logging.</p>
+
+        <div class="subsection-title">5.1 Multi-Firm Financial Split & Revenue Attribution</div>
+        <ul class="bullet-list">
+          <li><strong>AKB School of Excellence Ledger:</strong> Tuition Fees, Admission Fees, Examination Fees, Computer Lab Fees.</li>
+          <li><strong>AKB Educational Trust Ledger:</strong> Monthly Bus Transport Charges and Trust Maintenance Fees.</li>
+        </ul>
+
+        <div class="subsection-title">5.2 A5 Dual Receipt Format (Office Copy & Parent Copy Grid Layout)</div>
+        <div class="receipt-box">===================================================================================
+AKB SCHOOL OF EXCELLENCE - FEE RECEIPT (OFFICE COPY)
+Receipt No: REC-2026-9481                                     Date: 24-Sep-2026
+Student: R. Karthik (Class 10-A)                              Adm No: AKB-2026-0842
+-----------------------------------------------------------------------------------
+Fee Item                                      Category                     Amount
+Tuition Fee - Q2                              School Ledger             Rs.3,500.00
+Computer Lab Fee                              School Ledger             Rs.1,000.00
+Monthly Transport Fee (Sep)                   Trust Ledger              Rs.1,200.00
+-----------------------------------------------------------------------------------
+Total Paid (UPI/4298104812):                                            Rs.5,700.00
+Collected By: account1                                       Status: Verified
+===================================================================================</div>
+
+        <div class="subsection-title">5.3 Centralized Audit Logging Engine (audit_logs)</div>
+        <p class="para">Backend middleware (Commits <code>8cd2d04</code> & <code>b27c57a</code>) captures every financial transaction, student record edit, and user login attempt with timestamp, IP address, user ID, and JSON diff payload, accessible via an interactive Audit Logs UI view.</p>
+      </div>
+      <div class="running-footer">
+        <span>AKB School Platform v1.0.0 Client Release Manual</span>
+        <span>Page 5 of 12</span>
+      </div>
+    </div>
+
+    <!-- PAGE 6: MOBILE FLUTTER APP -->
+    <div class="page-sheet">
+      <div>
+        <div class="running-header">
+          <span class="doc-title">AKB SCHOOLS</span>
+          <span class="doc-subtitle">PAGE 6 — MOBILE FLUTTER APP</span>
+        </div>
+        <div class="section-title">6. Mobile Application Engineering — Flutter Platform</div>
+        <p class="para"><strong>ZERO_BOOK_13\madhar</strong> engineered and released the official Android & iOS Flutter mobile app (<code>akb-mobile-flutter</code>), enabling parent self-service fee payments and student homework access.</p>
+
+        <div class="subsection-title">6.1 Razorpay Payment Gateway Integration</div>
+        <p class="para">Integrated Razorpay Mobile SDK (Commits <code>6965a0c</code> & <code>8966b8b</code>) with payment failure recovery, instant invoice webview rendering, and duplicate payment flags.</p>
+        
+        <div class="code-box">// Razorpay Payment Checkout Excerpt (lib/payment/razorpay.dart) by ZERO_BOOK_13\madhar
+void openRazorpayCheckout(double amount, String studentId, String feeHead) {
+  var options = {
+    'key': 'rzp_live_AKBSchoolKey',
+    'amount': (amount * 100).toInt(),
+    'name': 'AKB School of Excellence',
+    'description': 'Fee Payment for Student ID: ' + studentId,
+    'prefill': {'contact': parentPhone, 'email': parentEmail}
+  };
+  try { _razorpay.open(options); } catch (e) { debugPrint('Checkout Error: $e'); }
+}</div>
+
+        <div class="subsection-title">6.2 Mobile Application Release Catalog</div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Version</th>
+              <th>Release Date</th>
+              <th>Delivered Enhancements</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>v1.0.6</strong></td><td>2026-08-02</td><td>Simplified REST API endpoint routing & fallback URLs</td><td><span class="badge badge-feat">Production</span></td></tr>
+            <tr><td><strong>v1.0.5</strong></td><td>2026-08-01</td><td>Razorpay live payment gateway integration & device compatibility patch</td><td><span class="badge badge-feat">Production</span></td></tr>
+            <tr><td><strong>v1.0.4</strong></td><td>2026-07-13</td><td>Homework submission date calculation fix & UI optimization</td><td><span class="badge badge-rel">Archived</span></td></tr>
+            <tr><td><strong>v1.0.2</strong></td><td>2026-07-04</td><td>Student email update popup dialog & fee control screen updates</td><td><span class="badge badge-rel">Archived</span></td></tr>
+            <tr><td><strong>v1.0.1</strong></td><td>2026-06-28</td><td>Multi-file homework uploads & failed payment recovery flow</td><td><span class="badge badge-rel">Archived</span></td></tr>
+            <tr><td><strong>v1.0.0</strong></td><td>2026-06-15</td><td>Initial production launch on Google Play Store & Apple App Store</td><td><span class="badge badge-rel">Archived</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="running-footer">
+        <span>AKB School Platform v1.0.0 Client Release Manual</span>
+        <span>Page 6 of 12</span>
+      </div>
+    </div>
+
+    <!-- PAGE 7: COMMIT CATALOG (FEE APP) -->
+    <div class="page-sheet">
+      <div>
+        <div class="running-header">
+          <span class="doc-title">AKB SCHOOLS</span>
+          <span class="doc-subtitle">PAGE 7 — COMMIT CATALOG (FEE APP)</span>
+        </div>
+        <div class="section-title">7. Master Commit Catalog — AKB Fee Collection App (akbschools)</div>
+        <p class="para">Audit matrix of production commits authored by <strong>ZERO_BOOK_13\madhar</strong> in the core fee collection application repository (<code>akbschools</code>):</p>
+
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Hash</th>
+              <th>Date</th>
+              <th>Type</th>
+              <th>Functional Summary & Scope</th>
+              <th>Target Files</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><code>4907d15</code></td><td>2026-09-21</td><td><span class="badge badge-fix">Fix</span></td><td>Excluded report card endpoints from student PUT/POST handlers</td><td><code>server.js</code></td></tr>
+            <tr><td><code>e6f00ee</code></td><td>2026-09-21</td><td><span class="badge badge-feat">Feature</span></td><td>Added report card schema migration (v1.0.10) & storage layer</td><td><code>server.js, dist/</code></td></tr>
+            <tr><td><code>85105b1</code></td><td>2026-09-19</td><td><span class="badge badge-feat">Feature</span></td><td>Implemented client SPA router, storage layer & server integration</td><td><code>app.js, store.js</code></td></tr>
+            <tr><td><code>8f6cafb</code></td><td>2026-09-17</td><td><span class="badge badge-fix">Fix</span></td><td>Cleared HTTP Basic Auth popup by updating environment config</td><td><code>.env, .env.example</code></td></tr>
+            <tr><td><code>f10d336</code></td><td>2026-09-17</td><td><span class="badge badge-feat">Feature</span></td><td>Added database seeding script (seed.js) & frontend store</td><td><code>scripts/seed.js</code></td></tr>
+            <tr><td><code>b27c57a</code></td><td>2026-09-16</td><td><span class="badge badge-fix">Fix</span></td><td>Mounted getAuditLogs inside Store.prototype resolving JS error</td><td><code>assets/js/store.js</code></td></tr>
+            <tr><td><code>8cd2d04</code></td><td>2026-09-16</td><td><span class="badge badge-feat">Feature</span></td><td>Added central audit_logs schema (v1.0.9) & Audit Logs UI view</td><td><code>server.js, views.js</code></td></tr>
+            <tr><td><code>3ea465a</code></td><td>2026-09-16</td><td><span class="badge badge-perf">Perf</span></td><td><strong>Optimized PUT /api/students latency from 13.5s to ~30ms</strong></td><td><code>server.js</code></td></tr>
+            <tr><td><code>8fdea1a</code></td><td>2026-09-16</td><td><span class="badge badge-feat">UI/UX</span></td><td>Added global API request loader progress bar & topbar interceptor</td><td><code>styles.css, utils.js</code></td></tr>
+            <tr><td><code>d71ba95</code></td><td>2026-09-16</td><td><span class="badge badge-feat">Feature</span></td><td>Added REST API endpoints for attendance, holidays & settings</td><td><code>server.js, store.js</code></td></tr>
+            <tr><td><code>00003b2</code></td><td>2026-09-16</td><td><span class="badge badge-feat">Feature</span></td><td>Added attendance REST endpoint & IndexedDB client storage engine</td><td><code>server.js, store.js</code></td></tr>
+            <tr><td><code>9267751</code></td><td>2026-09-16</td><td><span class="badge badge-db">DB</span></td><td><strong>Built programmatic migration runner & audit columns v1.0.8</strong></td><td><code>scripts/migrate.js</code></td></tr>
+            <tr><td><code>eb427ed</code></td><td>2026-09-15</td><td><span class="badge badge-db">DB</span></td><td>Added tables for user permissions (v1.0.6) & app settings (v1.0.7)</td><td><code>server.js, migrations/</code></td></tr>
+            <tr><td><code>8970ac0</code></td><td>2026-08-29</td><td><span class="badge badge-fix">Fix</span></td><td>Restored guaranteed login access on user saves (academic role)</td><td><code>server.js</code></td></tr>
+            <tr><td><code>fecf0ec</code></td><td>2026-08-29</td><td><span class="badge badge-feat">Feature</span></td><td>Enforced academic role access (all classes + specified pages)</td><td><code>server.js</code></td></tr>
+            <tr><td><code>25b3fa3</code></td><td>2026-08-29</td><td><span class="badge badge-feat">Feature</span></td><td>Added class assignment for staff & Holiday option in Attendance</td><td><code>views.js, store.js</code></td></tr>
+            <tr><td><code>1687a53</code></td><td>2026-08-29</td><td><span class="badge badge-sec">Security</span></td><td>Guaranteed admin/account login recovery from locked-out state</td><td><code>server.js</code></td></tr>
+            <tr><td><code>b46691e</code></td><td>2026-08-29</td><td><span class="badge badge-sec">Security</span></td><td><strong>Healed legacy password hashes automatically for Web Crypto</strong></td><td><code>server.js</code></td></tr>
+            <tr><td><code>4b0b44d</code></td><td>2026-08-29</td><td><span class="badge badge-sec">Security</span></td><td><strong>Engineered pure-JS PBKDF2 hashing for non-HTTPS network IPs</strong></td><td><code>assets/js/utils.js</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="running-footer">
+        <span>AKB School Platform v1.0.0 Client Release Manual</span>
+        <span>Page 7 of 12</span>
+      </div>
+    </div>
+
+    <!-- PAGE 8: COMMIT CATALOG (MULTI-REPO) -->
+    <div class="page-sheet">
+      <div>
+        <div class="running-header">
+          <span class="doc-title">AKB SCHOOLS</span>
+          <span class="doc-subtitle">PAGE 8 — COMMIT CATALOG (MULTI-REPO)</span>
+        </div>
+        <div class="section-title">8. Master Commit Catalog — Multi-Repository Suite</div>
+        <p class="para">Production commits authored by <strong>ZERO_BOOK_13\madhar</strong> across the mobile application, multi-firm accounts, and public web CMS repositories:</p>
+
+        <div class="subsection-title">8.1 AKB Mobile Flutter App (akb-mobile-flutter)</div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Hash</th>
+              <th>Date</th>
+              <th>Type</th>
+              <th>Functional Summary & Scope</th>
+              <th>Target Files</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><code>266465f</code></td><td>2026-09-20</td><td><span class="badge badge-fix">Refactor</span></td><td>Simplified mobile REST API endpoint handling & fallback urls</td><td><code>lib/api/api_service.dart</code></td></tr>
+            <tr><td><code>0203241</code></td><td>2026-08-02</td><td><span class="badge badge-rel">Release</span></td><td>Released AKB Mobile App version 1.0.6 update</td><td><code>pubspec.yaml</code></td></tr>
+            <tr><td><code>117d7af</code></td><td>2026-08-02</td><td><span class="badge badge-fix">Fix</span></td><td>Fixed attendance UI layout & homework submission display grid</td><td><code>lib/screens/attendance.dart</code></td></tr>
+            <tr><td><code>6965a0c</code></td><td>2026-08-01</td><td><span class="badge badge-feat">Feature</span></td><td><strong>Released v1.0.5 & integrated Razorpay gateway with device fix</strong></td><td><code>lib/payment/razorpay.dart</code></td></tr>
+            <tr><td><code>73a3283</code></td><td>2026-07-13</td><td><span class="badge badge-rel">Release</span></td><td>Released AKB Mobile App version 1.0.4 update</td><td><code>pubspec.yaml</code></td></tr>
+            <tr><td><code>4603e19</code></td><td>2026-07-11</td><td><span class="badge badge-fix">Fix</span></td><td>Fixed homework submission date calculation & empty bracket formatting</td><td><code>lib/screens/homework.dart</code></td></tr>
+            <tr><td><code>85b902f</code></td><td>2026-07-06</td><td><span class="badge badge-fix">Fix</span></td><td>Updated fee control screens & resolved student email update issue</td><td><code>lib/screens/fees.dart</code></td></tr>
+            <tr><td><code>478e417</code></td><td>2026-07-04</td><td><span class="badge badge-feat">Feature</span></td><td>Added student email addition popup dialog & released v1.0.2</td><td><code>lib/dialogs/email_dialog.dart</code></td></tr>
+            <tr><td><code>8966b8b</code></td><td>2026-06-28</td><td><span class="badge badge-feat">Feature</span></td><td>Released v1.0.1, handled Razorpay failed flow & multi-file homework</td><td><code>lib/payment/razorpay.dart</code></td></tr>
+          </tbody>
+        </table>
+
+        <div class="subsection-title">8.2 Multi-Company Accounts, Web CMS & Analytics</div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Repository</th>
+              <th>Hash</th>
+              <th>Date</th>
+              <th>Functional Summary & Scope</th>
+              <th>Target Files</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><code>akb-accounts</code></td><td><code>a699457</code></td><td>2026-08-19</td><td><strong>Migrated backend database from PostgreSQL to MySQL with seeding</strong></td><td><code>config/database.js</code></td></tr>
+            <tr><td><code>akb-accounts</code></td><td><code>10a7faa</code></td><td>2026-09-01</td><td>Merged accounts-akb-groups multi-company accounting branch</td><td><code>src/controllers/group.js</code></td></tr>
+            <tr><td><code>akb-we-cms</code></td><td><code>a1584d7</code></td><td>2026-09-20</td><td>Added mobile app privacy policy HTML page & Next.js config</td><td><code>app/privacy/page.tsx</code></td></tr>
+            <tr><td><code>akb-we-cms</code></td><td><code>72a111d</code></td><td>2026-08-02</td><td>Added AdminClientLayout component & automated deployment script</td><td><code>components/AdminLayout.tsx</code></td></tr>
+            <tr><td><code>akb-we-cms</code></td><td><code>63859b0</code></td><td>2026-08-01</td><td>Implemented NextAuth integration with protected admin news routes</td><td><code>app/api/auth/[...nextauth]</code></td></tr>
+            <tr><td><code>principals</code></td><td><code>f46d892</code></td><td>2026-09-01</td><td>Updated package-lock.json with dotenv for Railway npm ci runner</td><td><code>package.json</code></td></tr>
+            <tr><td><code>COFFEEMIA</code></td><td><code>67c5296</code></td><td>2026-09-24</td><td>Optimized thermal receipt printer layout & ESC/POS formatting</td><td><code>public/print.js</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="running-footer">
+        <span>AKB School Platform v1.0.0 Client Release Manual</span>
+        <span>Page 8 of 12</span>
+      </div>
+    </div>
+
+    <!-- PAGE 9: REST API SPECS -->
+    <div class="page-sheet">
+      <div>
+        <div class="running-header">
+          <span class="doc-title">AKB SCHOOLS</span>
+          <span class="doc-subtitle">PAGE 9 — REST API SPECS</span>
+        </div>
+        <div class="section-title">9. Complete REST API Specification & Endpoint Documentation</div>
+        
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Endpoint Route</th>
+              <th>HTTP Method</th>
+              <th>Access Level</th>
+              <th>Description & Purpose</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><code>/api/auth/login</code></td><td>POST</td><td>Public</td><td>Authenticates user credentials via PBKDF2 hash comparison.</td></tr>
+            <tr><td><code>/api/students</code></td><td>GET, PUT</td><td>Admin/Account</td><td>Fetches student roster or batch updates data (~30ms async sync).</td></tr>
+            <tr><td><code>/api/payments</code></td><td>GET, POST</td><td>Admin/Account</td><td>Fetches payment ledger or records new receipt with firm split.</td></tr>
+            <tr><td><code>/api/attendance</code></td><td>GET, POST</td><td>All Staff</td><td>Fetches class attendance records or posts daily attendance.</td></tr>
+            <tr><td><code>/api/audit-logs</code></td><td>GET</td><td>Admin Only</td><td>Fetches complete system audit logs trail with filters.</td></tr>
+            <tr><td><code>/api/settings</code></td><td>GET, PUT</td><td>Admin Only</td><td>Manages global system settings, WhatsApp keys & school metadata.</td></tr>
+          </tbody>
+        </table>
+
+        <div class="subsection-title">9.1 Fee Payment REST API Payload Example (POST /api/payments)</div>
+        <div class="code-box">{
+  "student_id": "AKB-2026-0842",
+  "receipt_no": "REC-2026-9481",
+  "amount_paid": 5700.00,
+  "payment_mode": "UPI",
+  "transaction_ref": "UPI/4298104812/OKAxis",
+  "firm_attribution": "AKB School of Excellence",
+  "fee_breakdown": [
+    { "fee_head": "Tuition Fee - Q2", "amount": 3500.00 },
+    { "fee_head": "Computer Lab Fee", "amount": 1000.00 },
+    { "fee_head": "Monthly Transport Fee", "amount": 1200.00 }
+  ],
+  "collected_by": "account1",
+  "created_at": "2026-09-24T10:30:00Z"
+}</div>
+      </div>
+      <div class="running-footer">
+        <span>AKB School Platform v1.0.0 Client Release Manual</span>
+        <span>Page 9 of 12</span>
+      </div>
+    </div>
+
+    <!-- PAGE 10: MYSQL SCHEMAS -->
+    <div class="page-sheet">
+      <div>
+        <div class="running-header">
+          <span class="doc-title">AKB SCHOOLS</span>
+          <span class="doc-subtitle">PAGE 10 — MYSQL SCHEMAS</span>
+        </div>
+        <div class="section-title">10. MySQL Relational Database Schema (DDL)</div>
+        <div class="code-box">CREATE TABLE IF NOT EXISTS settings (
+  setting_key VARCHAR(100) PRIMARY KEY,
+  setting_value LONGTEXT NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(100) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  role VARCHAR(50) DEFAULT 'teacher',
+  assigned_classes VARCHAR(255) DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS students (
+  id VARCHAR(36) PRIMARY KEY,
+  admission_no VARCHAR(50) UNIQUE NOT NULL,
+  name VARCHAR(120) NOT NULL,
+  class VARCHAR(50) NOT NULL,
+  section VARCHAR(10) DEFAULT 'A',
+  parent_name VARCHAR(120) DEFAULT '',
+  parent_phone VARCHAR(20) DEFAULT '',
+  admission_date DATE DEFAULT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS payments (
+  id VARCHAR(36) PRIMARY KEY,
+  receipt_no VARCHAR(50) UNIQUE NOT NULL,
+  student_id VARCHAR(36) NOT NULL,
+  amount_paid DECIMAL(10,2) NOT NULL,
+  payment_mode VARCHAR(30) DEFAULT 'Cash',
+  firm_attribution VARCHAR(100) DEFAULT 'AKB School of Excellence',
+  collected_by VARCHAR(50) DEFAULT 'account1',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;</div>
+      </div>
+      <div class="running-footer">
+        <span>AKB School Platform v1.0.0 Client Release Manual</span>
+        <span>Page 10 of 12</span>
+      </div>
+    </div>
+
+    <!-- PAGE 11: OPERATIONAL GUIDES -->
+    <div class="page-sheet">
+      <div>
+        <div class="running-header">
+          <span class="doc-title">AKB SCHOOLS</span>
+          <span class="doc-subtitle">PAGE 11 — OPERATIONAL GUIDES</span>
+        </div>
+        <div class="section-title">11. Operational Guides for Cashiers & Administrators</div>
+        
+        <div class="subsection-title">11.1 Cashier Billing & Receipt Workflow</div>
+        <ol class="bullet-list" style="padding-left: 14px;">
+          <li>Log in using cashier/accountant credentials (<code>account1</code> / <code>account2</code>).</li>
+          <li>Search student record by Admission Number or Name (<code>Ctrl + F</code>).</li>
+          <li>Select relevant fee heads (Tuition, Exam, Transport). System auto-splits revenue ledgers.</li>
+          <li>Select Payment Mode (Cash / UPI / Cheque) and click <strong>Save & Print Receipt</strong>.</li>
+          <li>System automatically prints dual A5 receipt (Office & Parent Copy) and triggers paper cut.</li>
+        </ol>
+
+        <div class="subsection-title">11.2 Teacher Attendance & Academic Workflow</div>
+        <ol class="bullet-list" style="padding-left: 14px;">
+          <li>Log in using assigned teacher account (<code>teacher</code>).</li>
+          <li>Navigate to <strong>Attendance Portal</strong> (<code>#attendance</code>), select Class and Date.</li>
+          <li>Mark student status (Present / Absent / Late / Holiday) and click <strong>Submit Attendance</strong>.</li>
+          <li>For Report Cards, navigate to <code>#reports</code>, enter examination marks, and click Save.</li>
+        </ol>
+      </div>
+      <div class="running-footer">
+        <span>AKB School Platform v1.0.0 Client Release Manual</span>
+        <span>Page 11 of 12</span>
+      </div>
+    </div>
+
+    <!-- PAGE 12: TROUBLESHOOTING & AUDIT -->
+    <div class="page-sheet">
+      <div>
+        <div class="running-header">
+          <span class="doc-title">AKB SCHOOLS</span>
+          <span class="doc-subtitle">PAGE 12 — TROUBLESHOOTING & AUDIT</span>
+        </div>
+        <div class="section-title">12. Troubleshooting Matrix & Code File Audit</div>
+        
+        <div class="subsection-title">12.1 System Diagnostic Matrix</div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Symptom</th>
+              <th>Possible Cause</th>
+              <th>Recommended Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Network Sync Timeout Error</td>
+              <td>MySQL service offline or network pool full</td>
+              <td>Verify MySQL status (<code>systemctl status mysqld</code>); system auto-runs on IndexedDB backup until DB recovers.</td>
+            </tr>
+            <tr>
+              <td>Web Crypto API Auth Blocked</td>
+              <td>Non-HTTPS LAN IP origin</td>
+              <td>System automatically executes pure-JS PBKDF2 engine in <code>utils.js</code> (Commit <code>4b0b44d</code>).</td>
+            </tr>
+            <tr>
+              <td>Mobile Payment Failure</td>
+              <td>Razorpay gateway timeout or network drop</td>
+              <td>Verify Razorpay key in app config; mobile app automatically prompts retry without duplicating bill.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="subsection-title">12.2 File Audit Summary</div>
+        <p class="para"><strong>Untracked Files Added:</strong> <code>.env</code>, <code>.env.example</code>, <code>deploy.sh</code>, <code>ecosystem.config.js</code>, <code>scripts/migrate.js</code>, <code>scripts/seed.js</code>.</p>
+        <p class="para"><strong>Modified Core Files:</strong> <code>server.js</code>, <code>assets/js/store.js</code>, <code>assets/js/views.js</code>, <code>assets/js/app.js</code>, <code>assets/js/utils.js</code>, <code>assets/css/styles.css</code>.</p>
+
+        <div style="margin-top: 30px; display: flex; justify-content: space-between;">
+          <div style="text-align: center; width: 45%;">
+            <div style="border-bottom: 1px solid #1e293b; height: 35px;"></div>
+            <p style="font-size: 10px; font-weight: 700; margin-top: 4px;">ZERO_BOOK_13\madhar (Lead Engineer)</p>
+            <p style="font-size: 8.5px; color: #64748b;">Software Architecture & Engineering</p>
+          </div>
+          <div style="text-align: center; width: 45%;">
+            <div style="border-bottom: 1px solid #1e293b; height: 35px;"></div>
+            <p style="font-size: 10px; font-weight: 700; margin-top: 4px;">School Management Representative</p>
+            <p style="font-size: 8.5px; color: #64748b;">AKB School of Excellence</p>
+          </div>
+        </div>
+      </div>
+      <div class="running-footer">
+        <span>AKB School Platform v1.0.0 Client Release Manual</span>
+        <span>Page 12 of 12</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

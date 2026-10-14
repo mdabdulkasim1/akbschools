@@ -5,16 +5,24 @@
   const $$ = (sel, root) => Array.prototype.slice.call((root || document).querySelectorAll(sel));
   const view = () => document.getElementById('view');
 
-  function statusBadge(bal, total) {
+  function statusBadge(bal, total, isDisabled) {
+    if (isDisabled) return '<span class="badge gray">Disabled</span>';
     if (total === 0) return '<span class="badge gray">No fee</span>';
     if (bal <= 0) return '<span class="badge green">Paid</span>';
     if (bal >= total) return '<span class="badge red">Pending</span>';
     return '<span class="badge amber">Partial</span>';
   }
 
-  // Fee-balance reminder message + WhatsApp/SMS click-to-send buttons
+  function studentStatusPill(s) {
+    const isAct = Store.isStudentActive(s);
+    return `<span class="badge ${isAct ? 'green' : 'gray'}">${isAct ? 'Active' : 'Disabled'}</span>`;
+  }
+
+  // Fee-balance reminder message + WhatsApp/SMS click-to-send buttons (active students only)
   function reminderText(s) {
+    if (!Store.isStudentActive(s)) return '';
     const t = Store.studentTotals(s);
+    if (t.balance <= 0) return '';
     const school = (Store.meta && Store.meta.school) || 'AKB School of Excellence';
     const parts = Store.HEAD_ORDER.filter(k => (s.fees[k] || {}).balance > 0)
       .map(k => Store.HEAD_LABELS[k] + ' ' + U.inr((s.fees[k] || {}).balance)).join(', ');
@@ -23,13 +31,13 @@
       '. Kindly clear the pending fees at the earliest. Thank you.';
   }
   function remindButtons(s) {
-    if (!s.contact || Store.studentTotals(s).balance <= 0) return '';
+    if (!Store.isStudentActive(s) || !s.contact || Store.studentTotals(s).balance <= 0) return '';
     const txt = reminderText(s);
     return `<a class="btn wa" target="_blank" rel="noopener" href="${U.waLink(s.contact, txt)}" title="Open WhatsApp with the reminder">💬 WhatsApp</a>` +
       `<a class="btn" href="${U.smsLink(s.contact, txt)}" title="Send SMS reminder">✉️ SMS</a>`;
   }
   function remindIcon(s) {
-    if (!s.contact || Store.studentTotals(s).balance <= 0) return '';
+    if (!Store.isStudentActive(s) || !s.contact || Store.studentTotals(s).balance <= 0) return '';
     return `<a class="btn sm wa" target="_blank" rel="noopener" href="${U.waLink(s.contact, reminderText(s))}" title="WhatsApp reminder to ${U.esc(s.contact)}">💬</a> `;
   }
   // server-side WhatsApp API status (optional; used only if an API provider is configured), cached
@@ -43,15 +51,26 @@
   /* -------------------------------------------------- Dashboard */
   function dashboard() {
     const students = Store.students;
+    const isAct = s => Store.isStudentActive(s);
     const cats = Store.HEAD_ORDER.map(k => {
       let total = 0, paid = 0;
-      students.forEach(s => { const h = s.fees[k]; if (h) { total += h.total; paid += h.paid; } });
+      students.forEach(s => {
+        const h = s.fees[k];
+        if (h) {
+          const p = Number(h.paid) || 0;
+          const t = isAct(s) ? (Number(h.total) || 0) : p;
+          total += t;
+          paid += p;
+        }
+      });
       return { key: k, label: Store.HEAD_LABELS[k], total, paid, bal: total - paid };
     });
     const gt = cats.reduce((a, c) => a + c.total, 0);
     const gp = cats.reduce((a, c) => a + c.paid, 0);
     const gb = gt - gp;
-    const defaulters = students.filter(s => Store.studentTotals(s).balance > 0).length;
+    const defaulters = students.filter(s => isAct(s) && Store.studentTotals(s).balance > 0).length;
+    const activeCount = students.filter(isAct).length;
+    const disabledCount = students.length - activeCount;
     const today = U.todayISO();
     const todayPays = Store.payments.filter(p => p.date === today);
     const todaySum = todayPays.reduce((a, p) => a + p.amount, 0);
@@ -59,7 +78,19 @@
 
     // business-wise summary (fees mapped to their business). AKB School of
     // Excellence is shown as two cards: Term Fees vs all other school fees.
-    const sumHeads = keys => { let total = 0, paid = 0; keys.forEach(k => students.forEach(s => { const h = s.fees[k]; if (h) { total += h.total; paid += h.paid; } })); return { total, paid }; };
+    const sumHeads = keys => {
+      let total = 0, paid = 0;
+      keys.forEach(k => students.forEach(s => {
+        const h = s.fees[k];
+        if (h) {
+          const p = Number(h.paid) || 0;
+          const t = isAct(s) ? (Number(h.total) || 0) : p;
+          total += t;
+          paid += p;
+        }
+      }));
+      return { total, paid };
+    };
     const isTermHead = k => /^term/.test(k);
     const bizEntries = [];
     Store.BUSINESS_ORDER.forEach(bk => {
@@ -84,13 +115,21 @@
 
     const byGrade = {};
     students.forEach(s => {
-      const g = s.grade || '—'; const t = Store.studentTotals(s);
-      byGrade[g] = byGrade[g] || { total: 0, paid: 0, bal: 0, n: 0 };
-      byGrade[g].total += t.total; byGrade[g].paid += t.paid; byGrade[g].bal += t.balance; byGrade[g].n++;
+      const g = s.grade || '—';
+      const studentAct = isAct(s);
+      const t = Store.studentTotals(s);
+      byGrade[g] = byGrade[g] || { total: 0, paid: 0, bal: 0, n: 0, activeN: 0 };
+      const tot = studentAct ? t.total : t.paid;
+      const bal = studentAct ? t.balance : 0;
+      byGrade[g].total += tot;
+      byGrade[g].paid += t.paid;
+      byGrade[g].bal += bal;
+      byGrade[g].n++;
+      if (studentAct) byGrade[g].activeN++;
     });
     const gradeRows = Object.keys(byGrade).sort().map(g => {
       const x = byGrade[g];
-      return `<tr class="clickable" data-grade="${U.esc(g)}"><td>${U.esc(g)}</td><td class="num">${x.n}</td>
+      return `<tr class="clickable" data-grade="${U.esc(g)}"><td>${U.esc(g)}</td><td class="num">${x.activeN || x.n}${x.n !== x.activeN ? ` <span class="muted" style="font-size:11px">(${x.n})</span>` : ''}</td>
         <td class="num">${U.inr(x.total)}</td><td class="num">${U.inr(x.paid)}</td>
         <td class="num" style="color:${x.bal > 0 ? 'var(--red)' : 'var(--green)'}">${U.inr(x.bal)}</td></tr>`;
     }).join('');
@@ -116,7 +155,7 @@
         <a href="#/collect" class="btn primary">🧾 Receive Payment</a>
       </div>
       <div class="cards">
-        <div class="card accent-blue link" data-nav="#/students"><div class="k">Total Fees</div><div class="v">${U.inr(gt)}</div><div class="sub">${students.length} students</div></div>
+        <div class="card accent-blue link" data-nav="#/students"><div class="k">Total Fees</div><div class="v">${U.inr(gt)}</div><div class="sub">${activeCount} active${disabledCount > 0 ? ` · ${disabledCount} disabled` : ' students'}</div></div>
         <div class="card accent-green link" data-nav="#/collections"><div class="k">Collected</div><div class="v">${U.inr(gp)}</div><div class="sub">${gt ? Math.round(gp / gt * 100) : 0}% of total</div></div>
         <div class="card accent-red link" data-nav="#/reports"><div class="k">Outstanding</div><div class="v">${U.inr(gb)}</div><div class="sub">${defaulters} students with dues</div></div>
         <div class="card accent-amber link" data-nav="#/collections"><div class="k">Collected Today</div><div class="v">${U.inr(todaySum)}</div><div class="sub">${todayPays.length} receipt(s) · in-app total ${U.inr(appCollected)}</div></div>
@@ -163,19 +202,34 @@
   }
 
   /* -------------------------------------------------- Students list */
-  let studentsState = { q: '', grade: '', status: '', sort: 'name' };
+  let studentsState = { q: '', grade: '', enrollStatus: 'all', status: '', sort: 'name' };
   function students(params) {
     if (params && params.grade != null) studentsState.grade = params.grade;
     if (params && params.status != null) studentsState.status = params.status;
+    if (params && params.enrollStatus != null) studentsState.enrollStatus = params.enrollStatus;
+    const isAct = s => Store.isStudentActive(s);
     const grades = Array.from(new Set(Store.students.map(s => s.grade).filter(Boolean))).sort();
     const gradeOpts = ['<option value="">All grades</option>']
       .concat(grades.map(g => `<option value="${U.esc(g)}"${studentsState.grade === g ? ' selected' : ''}>${U.esc(g)}</option>`)).join('');
 
-    let gt = 0, gp = 0, defaulters = 0;
-    Store.students.forEach(s => { const t = Store.studentTotals(s); gt += t.total; gp += t.paid; if (t.balance > 0) defaulters++; });
+    let gt = 0, gp = 0, defaulters = 0, activeCount = 0, disabledCount = 0;
+    Store.students.forEach(s => {
+      const studentAct = isAct(s);
+      const t = Store.studentTotals(s);
+      if (studentAct) {
+        activeCount++;
+        gt += t.total;
+        if (t.balance > 0) defaulters++;
+      } else {
+        disabledCount++;
+        gt += t.paid; // for disabled students, future pending fees are not calculated in summary
+      }
+      gp += t.paid;
+    });
+
     view().innerHTML = `
       <div class="page-head">
-        <div><h1>Students</h1><p>${Store.students.length} enrolled · click a row to view fees & the dashboard</p></div>
+        <div><h1>Students</h1><p>${activeCount} active${disabledCount > 0 ? ` · ${disabledCount} disabled` : ''} · click a row to view fees &amp; the dashboard</p></div>
         <div class="flex gap">
           <button class="btn" id="expStudents">⬇ Export CSV</button>
           <button class="btn" id="importBtn">⬆ Import CSV</button>
@@ -183,18 +237,23 @@
         </div>
       </div>
       <div class="cards">
-        ${kpi('Students', Store.students.length, { accent: 'blue' })}
-        ${kpi('Total Billed', U.inr(gt), { accent: 'blue' })}
+        ${kpi('Students', activeCount, { accent: 'blue', sub: disabledCount > 0 ? `${Store.students.length} total (${disabledCount} disabled)` : `${Store.students.length} enrolled` })}
+        ${kpi('Total Billed', U.inr(gt), { accent: 'blue', sub: disabledCount > 0 ? 'excludes future fees of disabled' : '' })}
         ${kpi('Collected', U.inr(gp), { accent: 'green', sub: (gt ? Math.round(gp / gt * 100) : 0) + '% collected', nav: '#/collections' })}
-        ${kpi('Outstanding', U.inr(gt - gp), { accent: 'red', sub: defaulters + ' with dues', nav: '#/reports' })}
+        ${kpi('Outstanding', U.inr(gt - gp), { accent: 'red', sub: defaulters + ' active with dues', nav: '#/reports' })}
       </div>
       <div class="panel">
         <div class="panel-head">
           <div class="toolbar">
-            <input id="stuSearch" type="search" placeholder="Search name / ID / parent…" value="${U.esc(studentsState.q)}" style="min-width:220px" />
+            <input id="stuSearch" type="search" placeholder="Search name / ID / parent…" value="${U.esc(studentsState.q)}" style="min-width:200px" />
             <select id="stuGrade">${gradeOpts}</select>
+            <select id="stuEnrollStatus">
+              <option value="all"${studentsState.enrollStatus === 'all' ? ' selected' : ''}>All students</option>
+              <option value="active"${studentsState.enrollStatus === 'active' ? ' selected' : ''}>Active only</option>
+              <option value="disabled"${studentsState.enrollStatus === 'disabled' ? ' selected' : ''}>Disabled only</option>
+            </select>
             <select id="stuStatus">
-              <option value="">All statuses</option>
+              <option value="">All payment statuses</option>
               <option value="due"${studentsState.status === 'due' ? ' selected' : ''}>Has dues</option>
               <option value="pending"${studentsState.status === 'pending' ? ' selected' : ''}>Not paid</option>
               <option value="partial"${studentsState.status === 'partial' ? ' selected' : ''}>Partial</option>
@@ -209,7 +268,7 @@
           <span class="muted" id="stuCount"></span>
         </div>
         <div class="table-scroll"><table>
-          <thead><tr><th>Student</th><th>ID</th><th>Grade</th><th class="t-right">Total</th><th class="t-right">Paid</th><th class="t-right">Balance</th><th>Status</th></tr></thead>
+          <thead><tr><th>Student</th><th>ID</th><th>Grade</th><th>Status</th><th class="t-right">Total</th><th class="t-right">Paid</th><th class="t-right">Balance</th><th>Fee Status</th></tr></thead>
           <tbody id="stuBody"></tbody>
         </table></div>
       </div>`;
@@ -218,33 +277,45 @@
       const q = studentsState.q.trim().toLowerCase();
       let rows = Store.students.filter(s => {
         if (studentsState.grade && s.grade !== studentsState.grade) return false;
+        const studentAct = isAct(s);
+        if (studentsState.enrollStatus === 'active' && !studentAct) return false;
+        if (studentsState.enrollStatus === 'disabled' && studentAct) return false;
         const t = Store.studentTotals(s);
-        if (studentsState.status === 'due' && !(t.balance > 0)) return false;
-        if (studentsState.status === 'paid' && !(t.total > 0 && t.balance <= 0)) return false;
-        if (studentsState.status === 'pending' && !(t.balance >= t.total && t.total > 0)) return false;
-        if (studentsState.status === 'partial' && !(t.balance > 0 && t.balance < t.total)) return false;
+        const bal = studentAct ? t.balance : 0;
+        if (studentsState.status === 'due' && !(bal > 0)) return false;
+        if (studentsState.status === 'paid' && !(t.total > 0 && bal <= 0)) return false;
+        if (studentsState.status === 'pending' && !(bal >= t.total && t.total > 0)) return false;
+        if (studentsState.status === 'partial' && !(bal > 0 && bal < t.total)) return false;
         if (q) { const hay = (s.name + ' ' + s.id + ' ' + (s.father || '') + ' ' + (s.contact || '')).toLowerCase(); if (hay.indexOf(q) < 0) return false; }
         return true;
       });
       rows.sort((a, b) => {
-        if (studentsState.sort === 'balance') return Store.studentTotals(b).balance - Store.studentTotals(a).balance;
+        if (studentsState.sort === 'balance') {
+          const balA = isAct(a) ? Store.studentTotals(a).balance : 0;
+          const balB = isAct(b) ? Store.studentTotals(b).balance : 0;
+          return balB - balA;
+        }
         if (studentsState.sort === 'grade') return (a.grade || '').localeCompare(b.grade || '') || a.name.localeCompare(b.name);
         return a.name.localeCompare(b.name);
       });
       $('#stuCount').textContent = rows.length + ' shown';
       $('#stuBody').innerHTML = rows.slice(0, 1000).map(s => {
+        const studentAct = isAct(s);
         const t = Store.studentTotals(s);
-        return `<tr class="clickable" data-id="${U.esc(s.id)}">
+        const bal = studentAct ? t.balance : 0;
+        return `<tr class="clickable${!studentAct ? ' row-disabled' : ''}" data-id="${U.esc(s.id)}">
           <td><b>${U.esc(s.name)}</b><div class="muted" style="font-size:11px">${U.esc(s.father || '')}</div></td>
           <td class="mono">${U.esc(s.id)}</td><td>${U.esc(s.grade || '')}</td>
+          <td><span class="badge ${studentAct ? 'green' : 'gray'}">${studentAct ? 'Active' : 'Disabled'}</span></td>
           <td class="num">${U.inr(t.total)}</td><td class="num" style="color:var(--green)">${U.inr(t.paid)}</td>
-          <td class="num" style="color:${t.balance > 0 ? 'var(--red)' : 'var(--muted)'};font-weight:600">${U.inr(t.balance)}</td>
-          <td>${statusBadge(t.balance, t.total)}</td></tr>`;
-      }).join('') || '<tr><td colspan="7" class="empty">No students match your filters.</td></tr>';
+          <td class="num" style="color:${studentAct && bal > 0 ? 'var(--red)' : 'var(--muted)'};font-weight:600">${studentAct ? U.inr(bal) : '<span class="muted">₹0 (Dis)</span>'}</td>
+          <td>${studentAct ? statusBadge(bal, t.total) : '<span class="badge gray">Disabled</span>'}</td></tr>`;
+      }).join('') || '<tr><td colspan="8" class="empty">No students match your filters.</td></tr>';
       $$('#stuBody [data-id]').forEach(tr => tr.onclick = () => location.hash = '#/student/' + encodeURIComponent(tr.dataset.id));
     }
     $('#stuSearch').oninput = U.debounce(e => { studentsState.q = e.target.value; apply(); }, 150);
     $('#stuGrade').onchange = e => { studentsState.grade = e.target.value; apply(); };
+    $('#stuEnrollStatus').onchange = e => { studentsState.enrollStatus = e.target.value; apply(); };
     $('#stuStatus').onchange = e => { studentsState.status = e.target.value; apply(); };
     $('#stuSort').onchange = e => { studentsState.sort = e.target.value; apply(); };
     $('#expStudents').onclick = exportStudentsCSV;
@@ -376,6 +447,7 @@
           </div>
           <h4 class="sec">Details</h4>
           <div class="grid2">
+            ${selectField('Status', 'status', 'active', [{ value: 'active', label: 'Active' }, { value: 'disabled', label: 'Disabled' }])}
             ${textField('Student Name *', 'name', '')}
             ${textField('Student ID *', 'id', Store.suggestId())}
             ${textField('Grade', 'grade', '')}
@@ -413,7 +485,7 @@
     $('#asSave', root).onclick = async () => {
       const get = f => { const el = $(`[data-f="${f}"]`, root); return el ? el.value.trim() : ''; };
       const data = { photo };
-      ['name', 'id', 'grade', 'classTeacher', 'gender', 'dob', 'admissionDate', 'father', 'mother', 'contact',
+      ['name', 'id', 'status', 'grade', 'classTeacher', 'gender', 'dob', 'admissionDate', 'father', 'mother', 'contact',
         'location', 'transportType', 'vehicle', 'religion', 'sportsActivity', 'admission'].forEach(f => data[f] = get(f));
       const pct = parseFloat(get('discountpct')); data.discount = isNaN(pct) ? 0 : pct / 100;
       data.fees = {};
@@ -428,15 +500,25 @@
 
   function exportStudentsCSV() {
     const heads = Store.HEAD_ORDER;
-    const header = ['Student ID', 'Name', 'Grade', 'Father', 'Contact', 'Discount']
+    const header = ['Student ID', 'Name', 'Status', 'Grade', 'Father', 'Contact', 'Discount']
       .concat(heads.flatMap(h => [Store.HEAD_LABELS[h] + ' Total', Store.HEAD_LABELS[h] + ' Paid', Store.HEAD_LABELS[h] + ' Bal']))
       .concat(['Grand Total', 'Grand Paid', 'Grand Balance']);
     const rows = [header];
     Store.students.forEach(s => {
+      const isAct = Store.isStudentActive(s);
       const t = Store.studentTotals(s);
-      const r = [s.id, s.name, s.grade, s.father, s.contact, s.discount];
-      heads.forEach(h => { const f = s.fees[h] || {}; r.push(f.total || 0, f.paid || 0, f.balance || 0); });
-      r.push(t.total, t.paid, t.balance); rows.push(r);
+      const r = [s.id, s.name, isAct ? 'Active' : 'Disabled', s.grade, s.father, s.contact, s.discount];
+      heads.forEach(h => {
+        const f = s.fees[h] || {};
+        const p = Number(f.paid) || 0;
+        const tot = isAct ? (Number(f.total) || 0) : p;
+        const bal = isAct ? (Number(f.balance) || (tot - p)) : 0;
+        r.push(tot, p, bal);
+      });
+      const grandTotal = isAct ? t.total : t.paid;
+      const grandBal = isAct ? t.balance : 0;
+      r.push(grandTotal, t.paid, grandBal);
+      rows.push(r);
     });
     U.download('akb_students_fees.csv', U.toCSV(rows), 'text/csv');
     U.toast('Exported students CSV', 'success');
@@ -450,14 +532,18 @@
   }
 
   function feeCategoryRows(s, withBusiness) {
+    const isAct = Store.isStudentActive(s);
     return Store.HEAD_ORDER.map(k => {
       const h = s.fees[k]; if (!h) return '';
+      const balCell = isAct
+        ? `<td class="num" style="color:${h.balance > 0 ? 'var(--red)' : 'var(--muted)'};font-weight:600">${U.inr(h.balance)}</td>`
+        : `<td class="num" style="color:var(--muted);font-weight:600">₹0 <span class="muted" style="font-size:11px">(Disabled)</span></td>`;
       return `<tr>
         ${withBusiness ? `<td class="muted" style="font-size:12px">${U.esc(Store.BUSINESS[k] || '')}</td>` : ''}
         <td><b>${U.esc(h.label)}</b></td>
         <td class="num">${U.inr(h.total)}</td>
         <td class="num" style="color:var(--green)">${U.inr(h.paid)}</td>
-        <td class="num" style="color:${h.balance > 0 ? 'var(--red)' : 'var(--muted)'};font-weight:600">${U.inr(h.balance)}</td></tr>`;
+        ${balCell}</tr>`;
     }).join('');
   }
 
@@ -562,6 +648,7 @@
   }
 
   function chairmanDashboard(s) {
+    const isAct = Store.isStudentActive(s);
     const t = Store.studentTotals(s);
     const overall = (() => {
       const m = [s.marks && s.marks.english, s.marks && s.marks.maths, s.marks && s.marks.science]
@@ -575,34 +662,57 @@
           <a href="#/students" class="btn ghost sm">← Back</a>
           <div class="flex gap" style="align-items:center">
             <div class="avatar">${s.photo ? `<img src="${s.photo}" alt="${U.esc(s.name)}"/>` : U.esc(U.initials(s.name))}</div>
-            <div><h1 style="margin:0">${U.esc(s.name)}</h1><p>Chairman Dashboard · ${U.esc(s.grade || '')} · ID ${U.esc(s.id)}</p></div>
+            <div>
+              <div class="flex gap" style="align-items:center">
+                <h1 style="margin:0">${U.esc(s.name)}</h1>
+                <span class="badge ${isAct ? 'green' : 'gray'}">${isAct ? 'Active' : 'Disabled'}</span>
+              </div>
+              <p>Chairman Dashboard · ${U.esc(s.grade || '')} · ID ${U.esc(s.id)}</p>
+            </div>
           </div>
         </div>
         <div class="flex gap wrap">
           ${remindButtons(s)}
           ${Store.canCollect() ? `
+          ${isAct ? `
+          <button class="btn danger" id="toggleStatusBtn">
+            🚫 Disable Student
+          </button>` : (Store.isAdmin() ? `
+          <button class="btn green" id="toggleStatusBtn">
+            ✅ Enable Student
+          </button>` : '')}
           <button class="btn" id="editBtn">✏️ Edit</button>
           <button class="btn danger" id="delStudentBtn">🗑 Delete</button>
           <button class="btn green" id="payBtn">🧾 Receive Payment</button>` : ''}
         </div>
       </div>
 
+      ${!isAct ? `
+      <div class="banner-disabled" id="disabledBanner">
+        <div><b>⚠️ Student is Disabled:</b> Future pending fees for this student are excluded from school summaries, dashboards, and collection dues.</div>
+        ${Store.isAdmin() ? '<button class="btn sm green" id="bannerEnableBtn">✅ Enable Student</button>' : '<span class="muted" style="font-size:12px;background:#fff;padding:4px 8px;border-radius:6px;border:1px solid #fecaca;font-weight:600">🔒 Enable access restricted to Administrator</span>'}
+      </div>` : ''}
+
       <div class="cards">
-        <div class="card accent-blue"><div class="k">Total</div><div class="v">${U.inr(t.total)}</div></div>
+        <div class="card accent-blue"><div class="k">Total Billed</div><div class="v">${U.inr(t.total)}</div></div>
         <div class="card accent-green"><div class="k">Received</div><div class="v">${U.inr(t.paid)}</div></div>
-        <div class="card ${t.balance > 0 ? 'accent-red' : 'accent-green'}"><div class="k">Balance (Outstanding)</div><div class="v">${U.inr(t.balance)}</div></div>
+        <div class="card ${!isAct ? 'accent-gray' : (t.balance > 0 ? 'accent-red' : 'accent-green')}">
+          <div class="k">Balance ${!isAct ? '(Excluded)' : '(Outstanding)'}</div>
+          <div class="v">${!isAct ? '₹0 <span class="muted" style="font-size:13px;font-weight:normal">(Disabled)</span>' : U.inr(t.balance)}</div>
+          ${!isAct ? `<div class="sub">Original uncollected: ${U.inr(t.balance)}</div>` : ''}
+        </div>
       </div>
 
       <div class="detail-grid chair">
         <div>
           <div class="panel">
-            <div class="panel-head"><h2>Fees by Category</h2>${statusBadge(t.balance, t.total)}</div>
+            <div class="panel-head"><h2>Fees by Category</h2>${statusBadge(t.balance, t.total, !isAct)}</div>
             <div class="table-scroll"><table>
               <thead><tr><th>Business</th><th>Fees Category</th><th class="t-right">Total</th><th class="t-right">Received</th><th class="t-right">Balance</th></tr></thead>
               <tbody>${feeCategoryRows(s, true)}</tbody>
               <tfoot><tr style="font-weight:700;background:#f8fafc"><td></td><td>TOTAL</td><td class="num">${U.inr(t.total)}</td>
                 <td class="num" style="color:var(--green)">${U.inr(t.paid)}</td>
-                <td class="num" style="color:${t.balance > 0 ? 'var(--red)' : 'var(--muted)'}">${U.inr(t.balance)}</td></tr></tfoot>
+                <td class="num" style="color:${isAct && t.balance > 0 ? 'var(--red)' : 'var(--muted)'}">${isAct ? U.inr(t.balance) : '₹0'}</td></tr></tfoot>
             </table></div>
           </div>
           <div class="panel">
@@ -617,7 +727,7 @@
             <div class="panel-body pad">
               <div class="student-photo-box">${s.photo ? `<img src="${s.photo}" alt="${U.esc(s.name)}"/>` : '<span class="muted" style="font-size:12px">No photo</span>'}</div>
               <div class="info-list">${infoRows([
-              ['Student Name', s.name], ['Student ID', s.id], ['Gender', s.gender],
+              ['Student Name', s.name], ['Student ID', s.id], ['Status', isAct ? 'Active' : 'Disabled'], ['Gender', s.gender],
               ['Date Of Birth', s.dob ? U.fmtDate(s.dob) : ''], ['Date Of Admission', s.admissionDate ? U.fmtDate(s.admissionDate) : ''], ['Age', s.age],
               ['Father Name', s.father], ['Mother Name', s.mother], ['Location (From)', s.location],
               ['Drop/Pick Location', s.dropLocation], ['Transport', s.transportType],
@@ -625,7 +735,7 @@
               ['Discount', s.discount ? (s.discount * 100).toFixed(0) + '%' : ''],
               ['Bus / Driver', s.vehicle]
             ])}
-              <div class="row"><span class="lbl">Outstanding</span><span class="val" style="color:var(--red)">${U.inr(t.balance)}</span></div>
+              <div class="row"><span class="lbl">Outstanding</span><span class="val" style="color:${isAct && t.balance > 0 ? 'var(--red)' : 'var(--muted)'}">${isAct ? U.inr(t.balance) : '₹0 (Disabled)'}</span></div>
             </div></div>
           </div>
           <div class="panel">
@@ -660,6 +770,7 @@
   }
 
   function studentFeeView(s) {
+    const isAct = Store.isStudentActive(s);
     const t = Store.studentTotals(s);
     view().innerHTML = `
       <div class="page-head">
@@ -667,37 +778,62 @@
           <a href="#/students" class="btn ghost sm">← Back</a>
           <div class="flex gap" style="align-items:center">
             <div class="avatar">${U.esc(U.initials(s.name))}</div>
-            <div><h1 style="margin:0">${U.esc(s.name)}</h1><p>${U.esc(s.grade || '')} · ID ${U.esc(s.id)}</p></div>
+            <div>
+              <div class="flex gap" style="align-items:center">
+                <h1 style="margin:0">${U.esc(s.name)}</h1>
+                <span class="badge ${isAct ? 'green' : 'gray'}">${isAct ? 'Active' : 'Disabled'}</span>
+              </div>
+              <p>${U.esc(s.grade || '')} · ID ${U.esc(s.id)}</p>
+            </div>
           </div>
         </div>
-        <div class="flex gap">
+        <div class="flex gap wrap">
+          ${remindButtons(s)}
           ${Store.canCollect() ? `
+          ${isAct ? `
+          <button class="btn danger" id="toggleStatusBtn">
+            🚫 Disable Student
+          </button>` : (Store.isAdmin() ? `
+          <button class="btn green" id="toggleStatusBtn">
+            ✅ Enable Student
+          </button>` : '')}
           <button class="btn" id="editBtn">✏️ Edit</button>
           <button class="btn green" id="payBtn">🧾 Receive Payment</button>` : ''}
         </div>
       </div>
+
+      ${!isAct ? `
+      <div class="banner-disabled" id="disabledBanner">
+        <div><b>⚠️ Student is Disabled:</b> Future pending fees for this student are excluded from school summaries, dashboards, and collection dues.</div>
+        ${Store.isAdmin() ? '<button class="btn sm green" id="bannerEnableBtn">✅ Enable Student</button>' : '<span class="muted" style="font-size:12px;background:#fff;padding:4px 8px;border-radius:6px;border:1px solid #fecaca;font-weight:600">🔒 Enable access restricted to Administrator</span>'}
+      </div>` : ''}
+
       <div class="cards">
         <div class="card accent-blue"><div class="k">Total Fees</div><div class="v">${U.inr(t.total)}</div></div>
         <div class="card accent-green"><div class="k">Paid</div><div class="v">${U.inr(t.paid)}</div></div>
-        <div class="card ${t.balance > 0 ? 'accent-red' : 'accent-green'}"><div class="k">Pending</div><div class="v">${U.inr(t.balance)}</div></div>
+        <div class="card ${!isAct ? 'accent-gray' : (t.balance > 0 ? 'accent-red' : 'accent-green')}">
+          <div class="k">Pending ${!isAct ? '(Excluded)' : ''}</div>
+          <div class="v">${!isAct ? '₹0 <span class="muted" style="font-size:13px;font-weight:normal">(Disabled)</span>' : U.inr(t.balance)}</div>
+          ${!isAct ? `<div class="sub">Original uncollected: ${U.inr(t.balance)}</div>` : ''}
+        </div>
       </div>
       <div class="detail-grid">
         <div class="panel">
           <div class="panel-head"><h2>Student Info</h2></div>
           <div class="panel-body pad"><div class="info-list">${infoRows([
-            ['Student ID', s.id], ['Grade', s.grade], ['Father', s.father], ['Mother', s.mother],
+            ['Student ID', s.id], ['Status', isAct ? 'Active' : 'Disabled'], ['Grade', s.grade], ['Father', s.father], ['Mother', s.mother],
             ['Contact', s.contact], ['Transport', s.transportType], ['Location', s.location]
           ])}</div></div>
         </div>
         <div>
           <div class="panel">
-            <div class="panel-head"><h2>Pending Fees by Category</h2>${statusBadge(t.balance, t.total)}</div>
+            <div class="panel-head"><h2>Pending Fees by Category</h2>${statusBadge(t.balance, t.total, !isAct)}</div>
             <div class="table-scroll"><table>
               <thead><tr><th>Fees Category</th><th class="t-right">Total</th><th class="t-right">Paid</th><th class="t-right">Pending</th></tr></thead>
               <tbody>${feeCategoryRows(s, false)}</tbody>
               <tfoot><tr style="font-weight:700;background:#f8fafc"><td>TOTAL</td><td class="num">${U.inr(t.total)}</td>
                 <td class="num" style="color:var(--green)">${U.inr(t.paid)}</td>
-                <td class="num" style="color:${t.balance > 0 ? 'var(--red)' : 'var(--muted)'}">${U.inr(t.balance)}</td></tr></tfoot>
+                <td class="num" style="color:${isAct && t.balance > 0 ? 'var(--red)' : 'var(--muted)'}">${isAct ? U.inr(t.balance) : '₹0'}</td></tr></tfoot>
             </table></div>
           </div>
           ${transportMonthlyPanel(s)}
@@ -737,14 +873,129 @@
       <td class="t-right">${Store.canCollect() ? `<button class="btn sm" data-print="${p.id}">🖨️</button>` : '<span class="muted">—</span>'}</td></tr>`).join('')
       || '<tr><td colspan="7" class="empty">No collections recorded for this business yet.</td></tr>';
   }
+  function confirmStatusModal(s) {
+    const isDis = s.status === 'disabled';
+    if (isDis && !Store.isAdmin()) {
+      U.toast('Only Administrator can enable a disabled student', 'error');
+      return;
+    }
+    if (!Store.canCollect()) {
+      U.toast('Only Account & Administrator can change student status', 'error');
+      return;
+    }
+    const root = document.getElementById('modalRoot');
+    const close = () => { root.innerHTML = ''; };
+    const t = Store.studentTotals(s);
+
+    root.innerHTML = `
+      <div class="modal-backdrop" id="statusBackdrop">
+        <div class="modal" style="max-width:500px">
+          <div class="modal-head">
+            <h3 style="display:flex;align-items:center;gap:8px">
+              ${isDis ? '✅ Enable Student' : '🚫 Disable Student'}
+            </h3>
+            <button class="x-close" id="statusCloseBtn">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border)">
+              <div class="avatar" style="width:48px;height:48px;font-size:18px">${s.photo ? `<img src="${s.photo}" alt=""/>` : U.esc(U.initials(s.name))}</div>
+              <div>
+                <b style="font-size:15px;display:block">${U.esc(s.name)}</b>
+                <span class="muted" style="font-size:12px">ID: ${U.esc(s.id)} · Grade: ${U.esc(s.grade || '—')}</span>
+              </div>
+            </div>
+
+            ${isDis ? `
+              <div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:12px 14px;color:#065f46;font-size:13px;line-height:1.5">
+                <strong>Restore to Active Status:</strong>
+                <p style="margin:6px 0 0">This student will be restored to <b>Active</b> status. Their pending balance of <b>${U.inr(t.balance)}</b> will be recalculated into school dashboards, reports, and fee collection summaries.</p>
+              </div>
+            ` : `
+              <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 14px;color:#991b1b;font-size:13px;line-height:1.5">
+                <strong>Exclude Pending Fees from Summaries:</strong>
+                <p style="margin:6px 0 0">This student will be marked <b>Disabled</b> (e.g., student left school or discontinued). Their future uncollected pending fees (<b>${U.inr(t.balance)}</b>) will <b>NOT</b> be added to school balance summaries, reports, or dashboards.</p>
+                <p style="margin:6px 0 0;font-size:12px;color:#7f1d1d">Past collected payments (<b>${U.inr(t.paid)}</b>) remain completely safe and intact in collection records.</p>
+              </div>
+            `}
+          </div>
+          <div class="modal-foot">
+            <button class="btn" id="statusCancelBtn">Cancel</button>
+            <button class="btn ${isDis ? 'green' : 'danger'}" id="statusConfirmBtn">
+              ${isDis ? '✅ Yes, Enable Student' : '🚫 Yes, Disable Student'}
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('statusCloseBtn').onclick = close;
+    document.getElementById('statusCancelBtn').onclick = close;
+    document.getElementById('statusBackdrop').onclick = (e) => { if (e.target.id === 'statusBackdrop') close(); };
+
+    const confirmBtn = document.getElementById('statusConfirmBtn');
+    confirmBtn.onclick = async () => {
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = 'Saving…';
+      try {
+        const nextStatus = isDis ? 'active' : 'disabled';
+        await Store.setStudentStatus(s.id, nextStatus);
+        close();
+        U.toast(isDis ? 'Student enabled · Marked active' : 'Student disabled · Future pending fees excluded from summary', 'success');
+        studentDetail(s.id);
+      } catch (err) {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = isDis ? '✅ Yes, Enable Student' : '🚫 Yes, Disable Student';
+        U.toast(err.message || 'Error updating student status', 'error');
+      }
+    };
+  }
+
+  function confirmDeleteStudentModal(s) {
+    if (!Store.canCollect()) { U.toast('Only Account & Administrator can delete students', 'error'); return; }
+    const root = document.getElementById('modalRoot');
+    const close = () => { root.innerHTML = ''; };
+    root.innerHTML = `
+      <div class="modal-backdrop" id="delBackdrop">
+        <div class="modal" style="max-width:480px">
+          <div class="modal-head">
+            <h3 style="color:var(--red)">🗑 Delete Student</h3>
+            <button class="x-close" id="delCloseBtn">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p>Are you sure you want to delete student <b>${U.esc(s.name)}</b> (ID ${U.esc(s.id)})?</p>
+            <p class="muted" style="font-size:12px;margin-top:6px">This removes the student profile record. Past payment receipts stay preserved in Collections.</p>
+          </div>
+          <div class="modal-foot">
+            <button class="btn" id="delCancelBtn">Cancel</button>
+            <button class="btn danger" id="delConfirmBtn">🗑 Yes, Delete</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.getElementById('delCloseBtn').onclick = close;
+    document.getElementById('delCancelBtn').onclick = close;
+    document.getElementById('delBackdrop').onclick = (e) => { if (e.target.id === 'delBackdrop') close(); };
+    document.getElementById('delConfirmBtn').onclick = async () => {
+      try {
+        await Store.deleteStudent(s.id);
+        close();
+        U.toast('Student deleted', 'success');
+        location.hash = '#/students';
+      } catch (err) {
+        U.toast(err.message || 'Error deleting student', 'error');
+      }
+    };
+  }
+
   function bindStudentActions(s) {
     const payB = document.getElementById('payBtn'); if (payB) payB.onclick = () => openPaymentModal(s.id);
     const edB = document.getElementById('editBtn'); if (edB) edB.onclick = () => openEditModal(s.id);
+    const togB = document.getElementById('toggleStatusBtn');
+    const banB = document.getElementById('bannerEnableBtn');
+    if (togB) togB.onclick = () => confirmStatusModal(s);
+    if (banB) banB.onclick = () => confirmStatusModal(s);
     const del = document.getElementById('delStudentBtn');
-    if (del) del.onclick = () => {
-      if (!confirm('Delete student "' + s.name + '" (ID ' + s.id + ')?\n\nThis removes the student record. Their past receipts stay in Collections.')) return;
-      Store.deleteStudent(s.id).then(() => { U.toast('Student deleted', 'success'); location.hash = '#/students'; });
-    };
+    if (del) del.onclick = () => confirmDeleteStudentModal(s);
     $$('[data-print]').forEach(b => b.onclick = () => { const p = Store.payments.find(x => x.id === b.dataset.print); if (p) Receipt.open(p); });
     $$('[data-del]').forEach(b => b.onclick = async () => {
       if (!confirm('Delete this payment? The amount will be added back to the balance.')) return;
@@ -805,6 +1056,15 @@
           <h4 class="sec">Personal</h4>
           <div class="grid2">
             ${textField('Student Name', 'name', s.name)}
+            ${s.status === 'disabled' && !Store.isAdmin() ? `
+              <div class="field">
+                <label>Enrollment Status</label>
+                <input type="text" value="Disabled (Only Admin can re-enable)" disabled style="background:#f1f5f9;color:#64748b;cursor:not-allowed"/>
+                <input type="hidden" data-f="status" value="disabled"/>
+              </div>` : selectField('Enrollment Status', 'status', s.status || 'active', [
+              { value: 'active', label: 'Active (calculate pending fees)' },
+              { value: 'disabled', label: 'Disabled (exclude future fees)' }
+            ])}
             ${textField('Grade', 'grade', s.grade)}
             ${textField('Class Teacher', 'classTeacher', s.classTeacher)}
             ${textField('Father Name', 'father', s.father)}
@@ -847,10 +1107,17 @@
     $('#edBackdrop', root).onclick = e => { if (e.target.id === 'edBackdrop') close(); };
     $('#edSave', root).onclick = async () => {
       s.photo = photo;
-      ['name', 'grade', 'classTeacher', 'father', 'mother', 'contact', 'location', 'dropLocation',
+      ['name', 'status', 'grade', 'classTeacher', 'father', 'mother', 'contact', 'location', 'dropLocation',
         'transportType', 'vehicle', 'religion', 'sportsActivity', 'prevSchool', 'admission', 'admissionDate'].forEach(f => {
         const el = $(`[data-f="${f}"]`, root); if (el) s[f] = el.value.trim();
       });
+      s.status = s.status || 'active';
+      if (s.status !== 'disabled' && !Store.isAdmin()) {
+        const orig = Store.getStudent(id);
+        if (orig && orig.status === 'disabled') {
+          s.status = 'disabled'; // non-admin cannot re-enable
+        }
+      }
       s.marks = s.marks || {};
       ['english', 'maths', 'science'].forEach(m => { const el = $(`[data-f="mk_${m}"]`, root); if (el) s.marks[m] = el.value.trim(); });
       Store.HEAD_ORDER.forEach(k => {
@@ -886,6 +1153,10 @@
   }
   function textField(label, key, val, type) {
     return `<div class="field"><label>${U.esc(label)}</label><input ${type ? 'type="' + type + '" ' : ''}data-f="${key}" value="${U.esc(val == null ? '' : val)}"/></div>`;
+  }
+  function selectField(label, key, val, options) {
+    const opts = (options || []).map(o => `<option value="${U.esc(o.value)}"${String(o.value) === String(val) ? ' selected' : ''}>${U.esc(o.label)}</option>`).join('');
+    return `<div class="field"><label>${U.esc(label)}</label><select data-f="${key}">${opts}</select></div>`;
   }
 
   /* -------------------------------------------------- Payment modal */
@@ -934,7 +1205,8 @@
       <div class="modal-backdrop" id="payBackdrop"><div class="modal">
         <div class="modal-head"><h3>Receive Payment — ${U.esc(s.name)}</h3><button class="x-close" id="payClose">&times;</button></div>
         <div class="modal-body">
-          <div class="muted" style="margin-bottom:10px">${U.esc(s.grade || '')} · ID ${U.esc(s.id)} · Outstanding <b style="color:var(--red)">${U.inr(Store.studentTotals(s).balance)}</b></div>
+          ${!Store.isStudentActive(s) ? `<div class="banner-disabled" style="margin-bottom:12px">⚠️ <b>Student is currently Disabled.</b> Future pending fees are excluded from school summaries. Payments recorded here will update historical collections.</div>` : ''}
+          <div class="muted" style="margin-bottom:10px">${U.esc(s.grade || '')} · ID ${U.esc(s.id)} ${!Store.isStudentActive(s) ? '· <span class="badge disabled">Disabled</span>' : ''} · Outstanding <b style="color:var(--red)">${U.inr(Store.studentTotals(s).balance)}</b></div>
           <div id="feeRows">${rows}</div>
           <div class="grid2" style="margin-top:16px">
             <div class="field"><label>Date</label><input type="date" id="payDate" value="${U.todayISO()}"/></div>
@@ -984,7 +1256,7 @@
     const today = U.todayISO();
     const todayPays = Store.payments.filter(p => p.date === today);
     const todaySum = todayPays.reduce((a, p) => a + p.amount, 0);
-    const defaulters = Store.students.filter(s => Store.studentTotals(s).balance > 0).length;
+    const defaulters = Store.students.filter(s => Store.isStudentActive(s) && Store.studentTotals(s).balance > 0).length;
     view().innerHTML = `
       <div class="page-head"><div><h1>Receive Payment</h1><p>Search a student to record a fee payment</p></div></div>
       <div class="cards">
@@ -1000,12 +1272,13 @@
       q = (q || '').trim().toLowerCase();
       let rows = Store.students;
       if (q) rows = rows.filter(s => (s.name + ' ' + s.id + ' ' + (s.father || '') + ' ' + (s.contact || '')).toLowerCase().indexOf(q) >= 0);
-      else rows = rows.filter(s => Store.studentTotals(s).balance > 0).sort((a, b) => Store.studentTotals(b).balance - Store.studentTotals(a).balance);
+      else rows = rows.filter(s => Store.isStudentActive(s) && Store.studentTotals(s).balance > 0).sort((a, b) => Store.studentTotals(b).balance - Store.studentTotals(a).balance);
       $('#colBody').innerHTML = rows.slice(0, 60).map(s => {
+        const isAct = Store.isStudentActive(s);
         const t = Store.studentTotals(s);
-        return `<tr><td class="clickable" data-open="${U.esc(s.id)}"><b>${U.esc(s.name)}</b><div class="muted" style="font-size:11px">ID ${U.esc(s.id)} · ${U.esc(s.father || '')}</div></td>
+        return `<tr class="${isAct ? '' : 'row-disabled'}"><td class="clickable" data-open="${U.esc(s.id)}"><b>${U.esc(s.name)}</b> ${!isAct ? '<span class="badge disabled sm">Disabled</span>' : ''}<div class="muted" style="font-size:11px">ID ${U.esc(s.id)} · ${U.esc(s.father || '')}</div></td>
           <td>${U.esc(s.grade || '')}</td>
-          <td class="num" style="color:${t.balance > 0 ? 'var(--red)' : 'var(--green)'};font-weight:600">${U.inr(t.balance)}</td>
+          <td class="num" style="color:${isAct && t.balance > 0 ? 'var(--red)' : 'var(--green)'};font-weight:600">${isAct ? U.inr(t.balance) : '₹0 <span class="muted" style="font-size:11px">(Disabled)</span>'}</td>
           <td class="t-right"><button class="btn green sm" data-pay="${U.esc(s.id)}">Collect</button></td></tr>`;
       }).join('') || '<tr><td colspan="4" class="empty">No match.</td></tr>';
       $$('[data-pay]').forEach(b => b.onclick = () => openPaymentModal(b.dataset.pay));
@@ -1111,13 +1384,25 @@
   }
 
   /* -------------------------------------------------- Reports (multi-filter) */
-  let repState = { q: '', grade: '', business: '', head: '', status: 'due', sort: 'balance' };
+  let repState = { q: '', grade: '', business: '', head: '', status: 'due', sort: 'balance', enroll: 'active' };
   function reports(params) {
     if (params && params.business != null) { repState.business = params.business; }
     const grades = Array.from(new Set(Store.students.map(s => s.grade).filter(Boolean))).sort();
-    const cats = Store.HEAD_ORDER.map(k => { let total = 0, paid = 0; Store.students.forEach(s => { const h = s.fees[k]; if (h) { total += h.total; paid += h.paid; } }); return { key: k, label: Store.HEAD_LABELS[k], biz: Store.BUSINESSES[Store.businessOfHead(k)].name, total, paid, bal: total - paid }; });
+    const cats = Store.HEAD_ORDER.map(k => {
+      let total = 0, paid = 0;
+      Store.students.forEach(s => {
+        const h = s.fees[k];
+        if (h) {
+          const isAct = Store.isStudentActive(s);
+          const p = Number(h.paid) || 0;
+          total += isAct ? (Number(h.total) || 0) : p;
+          paid += p;
+        }
+      });
+      return { key: k, label: Store.HEAD_LABELS[k], biz: Store.BUSINESSES[Store.businessOfHead(k)].name, total, paid, bal: total - paid };
+    });
     const gt = cats.reduce((a, c) => a + c.total, 0), gp = cats.reduce((a, c) => a + c.paid, 0);
-    const defaulters = Store.students.filter(s => Store.studentTotals(s).balance > 0).length;
+    const defaulters = Store.students.filter(s => Store.isStudentActive(s) && Store.studentTotals(s).balance > 0).length;
     // business summary
     const bizSum = Store.BUSINESS_ORDER.map(bk => { const c = cats.filter(x => Store.businessOfHead(x.key) === bk); return { bk, B: Store.BUSINESSES[bk], total: c.reduce((a, x) => a + x.total, 0), paid: c.reduce((a, x) => a + x.paid, 0) }; });
 
@@ -1146,6 +1431,11 @@
         <div class="panel-head"><h2>Outstanding Dues</h2>
           <div class="toolbar">
             <input id="rQ" type="search" placeholder="name / ID / phone" value="${U.esc(repState.q)}" style="min-width:150px"/>
+            <select id="rEnroll">
+              <option value="active"${repState.enroll === 'active' ? ' selected' : ''}>Active students</option>
+              <option value="all"${repState.enroll === 'all' ? ' selected' : ''}>All students</option>
+              <option value="disabled"${repState.enroll === 'disabled' ? ' selected' : ''}>Disabled only</option>
+            </select>
             <select id="rGrade"><option value="">All grades</option>${grades.map(g => `<option${repState.grade === g ? ' selected' : ''}>${U.esc(g)}</option>`).join('')}</select>
             <select id="rBiz"><option value="">All businesses</option>${Store.BUSINESS_ORDER.map(b => `<option value="${b}"${repState.business === b ? ' selected' : ''}>${U.esc(Store.BUSINESSES[b].name)}</option>`).join('')}</select>
             <select id="rHead"><option value="">Any fee head</option>${Store.HEAD_ORDER.map(k => `<option value="${k}"${repState.head === k ? ' selected' : ''}>${U.esc(Store.HEAD_LABELS[k])}</option>`).join('')}</select>
@@ -1169,15 +1459,27 @@
       </div>`;
 
     // outstanding relevant to the active filter: head > business > overall
-    function bizBal(r, bk) { let s = 0; Store.HEAD_ORDER.forEach(k => { if (Store.businessOfHead(k) === bk) s += (r.s.fees[k] || {}).balance || 0; }); return s; }
+    function bizBal(r, bk) {
+      if (!r.isAct) return 0;
+      let s = 0;
+      Store.HEAD_ORDER.forEach(k => { if (Store.businessOfHead(k) === bk) s += (r.s.fees[k] || {}).balance || 0; });
+      return s;
+    }
     function balOf(r) {
+      if (!r.isAct) return 0;
       if (repState.head) return (r.s.fees[repState.head] || {}).balance || 0;
       if (repState.business) return bizBal(r, repState.business);
       return r.t.balance;
     }
     function filtered() {
       const q = repState.q.trim().toLowerCase();
-      let rows = Store.students.map(s => ({ s, t: Store.studentTotals(s) }));
+      let rows = Store.students.map(s => {
+        const isAct = Store.isStudentActive(s);
+        const t = isAct ? Store.studentTotals(s) : Store.studentSummaryTotals(s);
+        return { s, t, isAct };
+      });
+      if (repState.enroll === 'active') rows = rows.filter(r => r.isAct);
+      else if (repState.enroll === 'disabled') rows = rows.filter(r => !r.isAct);
       if (repState.grade) rows = rows.filter(r => r.s.grade === repState.grade);
       if (q) rows = rows.filter(r => (r.s.name + ' ' + r.s.id + ' ' + (r.s.contact || '')).toLowerCase().indexOf(q) >= 0);
       // status (evaluated against the filter-relevant balance)
@@ -1197,11 +1499,11 @@
     }
     function dues() {
       const rows = filtered();
-      $('#dueBody').innerHTML = rows.slice(0, 1000).map(r => `<tr class="clickable" data-id="${U.esc(r.s.id)}">
-          <td><b>${U.esc(r.s.name)}</b><div class="muted" style="font-size:11px">ID ${U.esc(r.s.id)}</div></td>
+      $('#dueBody').innerHTML = rows.slice(0, 1000).map(r => `<tr class="clickable ${r.isAct ? '' : 'row-disabled'}" data-id="${U.esc(r.s.id)}">
+          <td><b>${U.esc(r.s.name)}</b> ${!r.isAct ? '<span class="badge disabled sm">Disabled</span>' : ''}<div class="muted" style="font-size:11px">ID ${U.esc(r.s.id)}</div></td>
           <td>${U.esc(r.s.grade || '')}</td><td class="mono">${U.esc(r.s.contact || '')}</td>
           <td class="num">${U.inr(r.t.total)}</td><td class="num" style="color:var(--green)">${U.inr(r.t.paid)}</td>
-          <td class="num" style="color:${balOf(r) > 0 ? 'var(--red)' : 'var(--muted)'};font-weight:700">${U.inr(balOf(r))}</td>
+          <td class="num" style="color:${balOf(r) > 0 ? 'var(--red)' : 'var(--muted)'};font-weight:700">${balOf(r) > 0 ? U.inr(balOf(r)) : (r.isAct ? '₹0' : '₹0 <span class="muted" style="font-size:11px">(Disabled)</span>')}</td>
           <td class="t-right">${remindIcon(r.s)}<button class="btn green sm" data-pay="${U.esc(r.s.id)}">Collect</button></td></tr>`).join('') || '<tr><td colspan="7" class="empty">No students match these filters.</td></tr>';
       const sum = rows.reduce((a, r) => a + balOf(r), 0);
       $('#dueFoot').innerHTML = `<b>${rows.length}</b> students · Total ${repState.head ? U.esc(Store.HEAD_LABELS[repState.head]) + ' ' : ''}outstanding <b style="color:var(--red)">${U.inr(sum)}</b>`;
@@ -1209,6 +1511,7 @@
       $$('#dueBody [data-pay]').forEach(b => b.onclick = ev => { ev.stopPropagation(); openPaymentModal(b.dataset.pay); });
     }
     $('#rQ').oninput = U.debounce(e => { repState.q = e.target.value; dues(); }, 150);
+    if ($('#rEnroll')) $('#rEnroll').onchange = e => { repState.enroll = e.target.value; dues(); };
     $('#rGrade').onchange = e => { repState.grade = e.target.value; dues(); };
     $('#rBiz').onchange = e => { repState.business = e.target.value; dues(); };
     $('#rHead').onchange = e => { repState.head = e.target.value; dues(); };
@@ -1217,12 +1520,12 @@
     $('#expCat').onclick = () => { const rows = [['Category', 'Business', 'Amount', 'Received', 'Receivable']]; cats.forEach(c => rows.push([c.label, c.biz, c.total, c.paid, c.bal])); rows.push(['TOTAL', '', gt, gp, gt - gp]); U.download('akb_category_summary.csv', U.toCSV(rows), 'text/csv'); U.toast('Exported', 'success'); };
     $('#expDue').onclick = () => {
       const rows = filtered();
-      const out = [['Student ID', 'Name', 'Grade', 'Father', 'Contact', 'Total', 'Paid', 'Outstanding']];
-      rows.forEach(r => out.push([r.s.id, r.s.name, r.s.grade, r.s.father, r.s.contact, r.t.total, r.t.paid, balOf(r)]));
+      const out = [['Student ID', 'Status', 'Name', 'Grade', 'Father', 'Contact', 'Total', 'Paid', 'Outstanding']];
+      rows.forEach(r => out.push([r.s.id, r.isAct ? 'Active' : 'Disabled', r.s.name, r.s.grade, r.s.father, r.s.contact, r.t.total, r.t.paid, balOf(r)]));
       U.download('akb_dues_filtered.csv', U.toCSV(out), 'text/csv'); U.toast('Exported ' + rows.length + ' rows', 'success');
     };
     $('#expRemind').onclick = () => {
-      const rows = filtered().filter(r => r.s.contact);
+      const rows = filtered().filter(r => r.s.contact && r.isAct && balOf(r) > 0);
       const out = [['Student', 'Grade', 'Parent Mobile', 'Outstanding', 'Message', 'WhatsApp Link']];
       rows.forEach(r => out.push([r.s.name, r.s.grade, r.s.contact, balOf(r), reminderText(r.s), U.waLink(r.s.contact, reminderText(r.s))]));
       U.download('akb_fee_reminders.csv', U.toCSV(out), 'text/csv');
@@ -1235,8 +1538,8 @@
       btn.classList.remove('hidden');
       btn.title = 'Send from school WhatsApp (' + (st.provider || 'api') + ')';
       btn.onclick = async () => {
-        const rows = filtered().filter(r => r.s.contact);
-        if (!rows.length) { U.toast('No recipients with a mobile number', 'error'); return; }
+        const rows = filtered().filter(r => r.s.contact && r.isAct && balOf(r) > 0);
+        if (!rows.length) { U.toast('No active recipients with dues and a mobile number', 'error'); return; }
         if (!confirm('Send ' + rows.length + ' fee reminders from the school WhatsApp number?\n\nThis sends real messages and may incur charges.')) return;
         btn.disabled = true; btn.textContent = 'Sending…';
         const recipients = rows.map(r => ({ phone: r.s.contact, name: r.s.name, grade: r.s.grade || '', balance: U.inr(balOf(r)), id: r.s.id }));
@@ -1273,24 +1576,42 @@
     const today = U.todayISO();
     const headAgg = heads.map(k => {
       let t = 0, p = 0, due = 0, future = 0;
-      Store.students.forEach(s => { const h = s.fees[k]; if (h) { t += h.total; p += h.paid; } });
+      Store.students.forEach(s => {
+        const h = s.fees[k];
+        if (h) {
+          const isAct = Store.isStudentActive(s);
+          const feePaid = Number(h.paid) || 0;
+          const feeTotal = isAct ? (Number(h.total) || 0) : feePaid;
+          t += feeTotal;
+          p += feePaid;
+        }
+      });
       if (k === 'transport') {
         // split outstanding by month: started-&-unpaid = Due, not-yet-reached = To be paid
-        Store.students.forEach(s => Store.transportBreakdown(s).forEach(m => {
-          if (m.balance > 0) { if ((m.key + '-01') <= today) due += m.balance; else future += m.balance; }
-        }));
+        Store.students.forEach(s => {
+          if (!Store.isStudentActive(s)) return;
+          Store.transportBreakdown(s).forEach(m => {
+            if (m.balance > 0) { if ((m.key + '-01') <= today) due += m.balance; else future += m.balance; }
+          });
+        });
       } else {
-        due = t - p; // lump-sum fees are payable now
+        due = t - p; // lump-sum fees are payable now (for disabled students, t - p is 0)
       }
       total += t; paid += p; return { k, label: Store.HEAD_LABELS[k], t, p, due, future, bal: t - p };
     });
     const outstanding = total - paid;
     const grandDue = headAgg.reduce((a, h) => a + h.due, 0);
     const grandFuture = headAgg.reduce((a, h) => a + h.future, 0);
-    const bizBal = s => heads.reduce((a, k) => a + ((s.fees[k] || {}).balance || 0), 0);
+    const bizBal = s => {
+      if (!Store.isStudentActive(s)) return 0;
+      return heads.reduce((a, k) => a + ((s.fees[k] || {}).balance || 0), 0);
+    };
     const bizPaid = s => heads.reduce((a, k) => a + ((s.fees[k] || {}).paid || 0), 0);
-    const bizTotal = s => heads.reduce((a, k) => a + ((s.fees[k] || {}).total || 0), 0);
-    const pendingCount = Store.students.filter(s => bizBal(s) > 0).length;
+    const bizTotal = s => {
+      if (!Store.isStudentActive(s)) return bizPaid(s);
+      return heads.reduce((a, k) => a + ((s.fees[k] || {}).total || 0), 0);
+    };
+    const pendingCount = Store.students.filter(s => Store.isStudentActive(s) && bizBal(s) > 0).length;
     const grades = Array.from(new Set(Store.students.map(s => s.grade).filter(Boolean))).sort();
 
     // collected in-app for this business
@@ -1353,10 +1674,15 @@
         <div class="panel-body pad muted">In-app collected for ${U.esc(B.name)}: <b style="color:var(--green)">${U.inr(appCollected)}</b></div>
       </div>`;
 
-    function pendingHeadBal(s, k) { return (s.fees[k] || {}).balance || 0; }
+    function pendingHeadBal(s, k) {
+      if (!Store.isStudentActive(s)) return 0;
+      return (s.fees[k] || {}).balance || 0;
+    }
     function filtered() {
       const q = bizState.q.trim().toLowerCase();
-      let rows = Store.students.map(s => ({ s, bal: bizState.head ? pendingHeadBal(s, bizState.head) : bizBal(s), paid: bizPaid(s) }));
+      let rows = Store.students
+        .filter(s => Store.isStudentActive(s))
+        .map(s => ({ s, bal: bizState.head ? pendingHeadBal(s, bizState.head) : bizBal(s), paid: bizPaid(s) }));
       rows = rows.filter(r => r.bal > 0);
       if (bizState.grade) rows = rows.filter(r => r.s.grade === bizState.grade);
       if (bizState.paid === 'zero') rows = rows.filter(r => r.paid === 0);
