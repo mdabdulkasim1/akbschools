@@ -292,7 +292,6 @@
       }
       await this.load();
       if (!this.users.length) await this.seedUsers();
-      if (!this.students.length) await this.seed();
 
       if (!Array.isArray(this.meta.feeHeads) || !this.meta.feeHeads.length) {
         this.meta.feeHeads = DEFAULT_FEE_HEADS.map(h => Object.assign({}, h));

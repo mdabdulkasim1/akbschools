@@ -81,7 +81,7 @@ BACKUP_EMAIL=contact@akbschools.com
 EOF
 chmod 600 "${APP_DIR}/.env"
 
-# 4. Install Node dependencies & run database migrations/seeding
+# 4. Install Node dependencies & run database migrations
 echo "[4/7] Installing NPM packages and running database migrations..."
 cd "${APP_DIR}"
 npm install --omit=dev

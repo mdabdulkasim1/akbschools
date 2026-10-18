@@ -88,25 +88,11 @@ function resolveDataDir() {
 }
 let DB = { version: 0, state: { students: [], payments: [], users: [], meta: {} }, lastBackupAt: null };
 function loadDB() {
-  try { DB = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); if (!DB.state) DB.state = { students: [], payments: [], users: [], meta: {} }; }
-  catch (e) { /* fresh */ }
-
-  if (!DB.state || !Array.isArray(DB.state.students) || !DB.state.students.length) {
-    try {
-      const seedPath = path.join(ROOT, 'data', 'students.seed.json');
-      if (fs.existsSync(seedPath)) {
-        const seedData = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
-        const st = Array.isArray(seedData) ? seedData : (seedData && seedData.students ? seedData.students : []);
-        if (st.length) {
-          DB.state = DB.state || {};
-          DB.state.students = st;
-          DB.state.meta = Object.assign({ seeded: true, school: seedData.school || 'AKB School of Excellence', year: seedData.year || '2026-2027' }, DB.state.meta || {});
-          console.log('[Server] Loaded ' + st.length + ' students from data/students.seed.json');
-        }
-      }
-    } catch (e) {
-      console.warn('[Server] Seed load warning:', e.message);
-    }
+  try {
+    DB = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    if (!DB.state) DB.state = { students: [], payments: [], users: [], meta: {} };
+  } catch (e) {
+    DB = { version: 0, state: { students: [], payments: [], users: [], meta: {} }, lastBackupAt: null };
   }
 }
 let writeChain = Promise.resolve();
