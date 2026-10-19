@@ -39,42 +39,87 @@
     return Store.canAccess(pageOf(name));
   }
 
+  const _lastFetched = {};
+  function fetchIfStale(key, fn, maxAgeMs = 15000) {
+    const now = Date.now();
+    if (_lastFetched[key] && now - _lastFetched[key] < maxAgeMs) return Promise.resolve();
+    return fn().then(() => { _lastFetched[key] = Date.now(); }).catch(() => {});
+  }
+  Router.invalidateCache = function (key) {
+    if (key) delete _lastFetched[key];
+    else for (const k of Object.keys(_lastFetched)) delete _lastFetched[k];
+  };
+
   async function ensureModuleData(name) {
     const page = pageOf(name);
+    const promises = [];
     switch (page) {
       case 'dashboard':
-        await Promise.all([Store.fetchSettings(), Store.fetchFeeHeads(), Store.fetchStudents(), Store.fetchPayments()]);
+        promises.push(
+          fetchIfStale('settings', () => Store.fetchSettings()),
+          fetchIfStale('feeHeads', () => Store.fetchFeeHeads()),
+          fetchIfStale('students', () => Store.fetchStudents()),
+          fetchIfStale('payments', () => Store.fetchPayments())
+        );
         break;
       case 'students':
       case 'student':
-        await Promise.all([Store.fetchSettings(), Store.fetchFeeHeads(), Store.fetchStudents()]);
+        promises.push(
+          fetchIfStale('settings', () => Store.fetchSettings()),
+          fetchIfStale('feeHeads', () => Store.fetchFeeHeads()),
+          fetchIfStale('students', () => Store.fetchStudents())
+        );
         break;
       case 'collect':
       case 'collections':
-        await Promise.all([Store.fetchSettings(), Store.fetchFeeHeads(), Store.fetchStudents(), Store.fetchPayments()]);
+        promises.push(
+          fetchIfStale('settings', () => Store.fetchSettings()),
+          fetchIfStale('feeHeads', () => Store.fetchFeeHeads()),
+          fetchIfStale('students', () => Store.fetchStudents()),
+          fetchIfStale('payments', () => Store.fetchPayments())
+        );
         break;
       case 'reports':
       case 'business':
-        await Promise.all([Store.fetchSettings(), Store.fetchFeeHeads(), Store.fetchStudents(), Store.fetchPayments()]);
+        promises.push(
+          fetchIfStale('settings', () => Store.fetchSettings()),
+          fetchIfStale('feeHeads', () => Store.fetchFeeHeads()),
+          fetchIfStale('students', () => Store.fetchStudents()),
+          fetchIfStale('payments', () => Store.fetchPayments())
+        );
         break;
       case 'attendance':
       case 'attreport':
-        await Promise.all([Store.fetchStudents(), Store.fetchAttendance(), Store.fetchHolidays()]);
+        promises.push(
+          fetchIfStale('students', () => Store.fetchStudents()),
+          fetchIfStale('attendance', () => Store.fetchAttendance()),
+          fetchIfStale('holidays', () => Store.fetchHolidays())
+        );
         break;
       case 'marks':
       case 'academics':
-        await Promise.all([Store.fetchStudents(), Store.fetchSettings()]);
+        promises.push(
+          fetchIfStale('students', () => Store.fetchStudents()),
+          fetchIfStale('settings', () => Store.fetchSettings())
+        );
         break;
       case 'users':
-        await Store.fetchUsers();
+        promises.push(fetchIfStale('users', () => Store.fetchUsers()));
         break;
       case 'data':
       case 'audit':
-        await Promise.all([Store.fetchSettings(), Store.fetchFeeHeads()]);
+        promises.push(
+          fetchIfStale('settings', () => Store.fetchSettings()),
+          fetchIfStale('feeHeads', () => Store.fetchFeeHeads())
+        );
         break;
       default:
-        await Promise.all([Store.fetchSettings(), Store.fetchFeeHeads()]);
+        promises.push(
+          fetchIfStale('settings', () => Store.fetchSettings()),
+          fetchIfStale('feeHeads', () => Store.fetchFeeHeads())
+        );
     }
+    await Promise.all(promises);
   }
 
   async function route() {
@@ -87,7 +132,18 @@
       if (location.hash.replace(/^#\/?/, '').split('/')[0] !== land) { location.hash = '#/' + land; return; }
     }
     try {
-      // Fetch only the data required for this module on-demand when entering the route
+      const viewEl = document.getElementById('view');
+      const hasInitialData = Store.students && Store.students.length > 0;
+      if (viewEl && (!hasInitialData || !viewEl.children.length)) {
+        const title = name ? (name.charAt(0).toUpperCase() + name.slice(1)) : 'App';
+        viewEl.innerHTML = `
+          <div class="view-loader">
+            <div class="spinner-md"></div>
+            <div class="view-loader-title">Loading ${U.esc(title)}…</div>
+            <div class="view-loader-sub">Fetching latest data from server</div>
+          </div>`;
+      }
+      setActive(pageOf(name));
       await ensureModuleData(name);
 
       switch (name) {

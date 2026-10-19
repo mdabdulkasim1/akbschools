@@ -70,30 +70,38 @@ async function runMigrations() {
     if (MYSQL_URL) {
       db = await mysql.createConnection({ uri: MYSQL_URL, multipleStatements: true });
     } else {
-      // Connect without database first to ensure database exists
-      let sysConn;
       try {
-        sysConn = await mysql.createConnection({
+        db = await mysql.createConnection({
           host: MYSQL_HOST,
           user: MYSQL_USER,
           password: MYSQL_PASSWORD,
-          port: MYSQL_PORT
+          database: MYSQL_DATABASE,
+          port: MYSQL_PORT,
+          multipleStatements: true
         });
-        await sysConn.query(`CREATE DATABASE IF NOT EXISTS \`${MYSQL_DATABASE}\` DEFAULT CHARACTER SET utf8mb4;`);
-        await sysConn.end();
-        writeLog(`Database '${MYSQL_DATABASE}' verified/created.`);
-      } catch (err) {
-        writeLog(`[WARN] Failed sysConn database check: ${err.message}`);
+      } catch (dbErr) {
+        if (dbErr.code === 'ER_BAD_DB_ERROR' || dbErr.errno === 1049) {
+          writeLog(`Database '${MYSQL_DATABASE}' not found, attempting to create...`);
+          const sysConn = await mysql.createConnection({
+            host: MYSQL_HOST,
+            user: MYSQL_USER,
+            password: MYSQL_PASSWORD,
+            port: MYSQL_PORT
+          });
+          await sysConn.query(`CREATE DATABASE IF NOT EXISTS \`${MYSQL_DATABASE}\` DEFAULT CHARACTER SET utf8mb4;`);
+          await sysConn.end();
+          db = await mysql.createConnection({
+            host: MYSQL_HOST,
+            user: MYSQL_USER,
+            password: MYSQL_PASSWORD,
+            database: MYSQL_DATABASE,
+            port: MYSQL_PORT,
+            multipleStatements: true
+          });
+        } else {
+          throw dbErr;
+        }
       }
-
-      db = await mysql.createConnection({
-        host: MYSQL_HOST,
-        user: MYSQL_USER,
-        password: MYSQL_PASSWORD,
-        database: MYSQL_DATABASE,
-        port: MYSQL_PORT,
-        multipleStatements: true
-      });
     }
   } catch (err) {
     writeLog(`[ERROR] Database connection failed: ${err.message}`);

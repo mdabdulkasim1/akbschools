@@ -164,22 +164,31 @@
   // Global API fetch loader interceptor
   let activeApiRequests = 0;
   const origFetch = w.fetch;
-  function setLoaderState(loading) {
+  function setLoaderState(loading, isWrite) {
     const pBar = document.getElementById('globalProgressBar');
     const badge = document.getElementById('globalLoaderBadge');
     if (pBar) pBar.classList.toggle('loading', loading);
-    if (badge) badge.classList.toggle('visible', loading);
+    if (badge) {
+      badge.classList.toggle('visible', loading);
+      const textSpan = badge.querySelector('span:last-child');
+      if (textSpan) {
+        textSpan.textContent = isWrite ? 'Saving…' : 'Loading…';
+      }
+    }
   }
 
   if (origFetch) {
     w.fetch = function () {
       const firstArg = arguments[0];
+      const secondArg = arguments[1];
       const url = typeof firstArg === 'string' ? firstArg : (firstArg && firstArg.url ? firstArg.url : '');
       const isApi = url.indexOf('/api/') !== -1 || url.indexOf('api/') !== -1;
+      const method = (secondArg && secondArg.method) || (typeof firstArg === 'object' && firstArg.method) || 'GET';
+      const isWrite = method.toUpperCase() === 'POST' || method.toUpperCase() === 'PUT' || method.toUpperCase() === 'DELETE';
 
       if (isApi) {
         activeApiRequests++;
-        setLoaderState(true);
+        setLoaderState(true, isWrite);
       }
 
       return origFetch.apply(this, arguments)
@@ -187,7 +196,7 @@
           if (isApi) {
             activeApiRequests = Math.max(0, activeApiRequests - 1);
             if (activeApiRequests === 0) {
-              setLoaderState(false);
+              setLoaderState(false, false);
             }
           }
         });

@@ -106,195 +106,217 @@ function saveDB() {
 loadDB();
 
 let lastMySqlLoadAt = 0;
+let mysqlLoadPromise = null;
 async function loadDBFromMySQL(force) {
   const p = getPool();
   if (!p) return false;
   if (!force && Date.now() - lastMySqlLoadAt < 10000) return true;
-  try {
-    const [stRows] = await p.query('SELECT * FROM students');
-    const [sfRows] = await p.query('SELECT * FROM student_fees');
-    const [trRows] = await p.query('SELECT * FROM student_transport_monthly').catch(() => [[]]);
-    const [subRows] = await p.query('SELECT * FROM student_sub_fees').catch(() => [[]]);
-    const [repRows] = await p.query('SELECT * FROM report_cards').catch(() => [[]]);
-    const [attRows] = await p.query('SELECT * FROM attendance').catch(() => [[]]);
-    const [setRows] = await p.query('SELECT * FROM app_settings').catch(() => [[]]);
+  if (mysqlLoadPromise) return mysqlLoadPromise;
 
-    const feesMap = {};
-    for (const sf of sfRows) {
-      if (!feesMap[sf.student_id]) feesMap[sf.student_id] = {};
-      feesMap[sf.student_id][sf.head_key] = {
-        label: sf.head_key,
-        total: Number(sf.total_amount) || 0,
-        paid: Number(sf.paid_amount) || 0,
-        balance: Number(sf.balance_amount) || 0
-      };
-    }
+  mysqlLoadPromise = (async () => {
+    try {
+      const [
+        [stRows],
+        [sfRows],
+        [trRows],
+        [subRows],
+        [repRows],
+        [attRows],
+        [setRows],
+        [pmRows],
+        [usrRows],
+        [fhRows]
+      ] = await Promise.all([
+        p.query('SELECT * FROM students'),
+        p.query('SELECT * FROM student_fees'),
+        p.query('SELECT * FROM student_transport_monthly').catch(() => [[]]),
+        p.query('SELECT * FROM student_sub_fees').catch(() => [[]]),
+        p.query('SELECT * FROM report_cards').catch(() => [[]]),
+        p.query('SELECT * FROM attendance').catch(() => [[]]),
+        p.query('SELECT * FROM app_settings').catch(() => [[]]),
+        p.query('SELECT * FROM payments'),
+        p.query('SELECT * FROM users'),
+        p.query('SELECT * FROM fee_heads')
+      ]);
 
-    const transportMap = {};
-    for (const tr of trRows) {
-      if (!transportMap[tr.student_id]) transportMap[tr.student_id] = {};
-      transportMap[tr.student_id][tr.month_key] = {
-        total: Number(tr.total_amount) || 0,
-        paid: Number(tr.paid_amount) || 0,
-        balance: Number(tr.balance_amount) || 0
-      };
-    }
+      const feesMap = {};
+      for (const sf of sfRows) {
+        if (!feesMap[sf.student_id]) feesMap[sf.student_id] = {};
+        feesMap[sf.student_id][sf.head_key] = {
+          label: sf.head_key,
+          total: Number(sf.total_amount) || 0,
+          paid: Number(sf.paid_amount) || 0,
+          balance: Number(sf.balance_amount) || 0
+        };
+      }
 
-    const subFeesMap = {};
-    for (const sub of subRows) {
-      if (!subFeesMap[sub.student_id]) subFeesMap[sub.student_id] = {};
-      if (!subFeesMap[sub.student_id][sub.parent_head_key]) subFeesMap[sub.student_id][sub.parent_head_key] = {};
-      subFeesMap[sub.student_id][sub.parent_head_key][sub.sub_key] = {
-        total: Number(sub.total_amount) || 0,
-        paid: Number(sub.paid_amount) || 0,
-        balance: Number(sub.balance_amount) || 0
-      };
-    }
+      const transportMap = {};
+      for (const tr of trRows) {
+        if (!transportMap[tr.student_id]) transportMap[tr.student_id] = {};
+        transportMap[tr.student_id][tr.month_key] = {
+          total: Number(tr.total_amount) || 0,
+          paid: Number(tr.paid_amount) || 0,
+          balance: Number(tr.balance_amount) || 0
+        };
+      }
 
-    const reportMap = {};
-    for (const rep of repRows) {
-      try {
-        let repObj = null;
-        if (rep.report_json) {
-          repObj = typeof rep.report_json === 'string' ? JSON.parse(rep.report_json) : rep.report_json;
-        } else if (rep.marks_json) {
-          const marks = typeof rep.marks_json === 'string' ? JSON.parse(rep.marks_json) : rep.marks_json;
-          repObj = { marks: marks || {}, remarks: rep.remarks || '' };
+      const subFeesMap = {};
+      for (const sub of subRows) {
+        if (!subFeesMap[sub.student_id]) subFeesMap[sub.student_id] = {};
+        if (!subFeesMap[sub.student_id][sub.parent_head_key]) subFeesMap[sub.student_id][sub.parent_head_key] = {};
+        subFeesMap[sub.student_id][sub.parent_head_key][sub.sub_key] = {
+          total: Number(sub.total_amount) || 0,
+          paid: Number(sub.paid_amount) || 0,
+          balance: Number(sub.balance_amount) || 0
+        };
+      }
+
+      const reportMap = {};
+      for (const rep of repRows) {
+        try {
+          let repObj = null;
+          if (rep.report_json) {
+            repObj = typeof rep.report_json === 'string' ? JSON.parse(rep.report_json) : rep.report_json;
+          } else if (rep.marks_json) {
+            const marks = typeof rep.marks_json === 'string' ? JSON.parse(rep.marks_json) : rep.marks_json;
+            repObj = { marks: marks || {}, remarks: rep.remarks || '' };
+          }
+          if (repObj) {
+            reportMap[rep.student_id] = repObj;
+          }
+        } catch (e) {}
+      }
+
+      const students = stRows.map(s => ({
+        id: s.id,
+        name: s.name,
+        grade: s.grade,
+        classTeacher: s.class_teacher,
+        gender: s.gender,
+        dob: s.dob,
+        age: s.age,
+        prevSchool: s.prev_school || s.prevSchool || '',
+        father: s.father,
+        mother: s.mother,
+        contact: s.contact,
+        religion: s.religion,
+        location: s.location,
+        dropLocation: s.drop_location,
+        transportType: s.transport_type,
+        vehicle: s.vehicle,
+        status: s.status,
+        discount: Number(s.discount) || 0,
+        admission: s.admission,
+        sportsActivity: s.sports_activity,
+        photo: s.photo || '',
+        fees: feesMap[s.id] || {},
+        transport: transportMap[s.id] || undefined,
+        subs: subFeesMap[s.id] || undefined,
+        report: reportMap[s.id] || undefined
+      }));
+
+      const payments = pmRows.map(pm => {
+        let items = [];
+        try { items = typeof pm.items_json === 'string' ? JSON.parse(pm.items_json) : (pm.items_json || []); } catch (e) {}
+        return {
+          id: pm.receipt_no,
+          receiptNo: pm.receipt_no,
+          date: pm.date,
+          businessName: pm.business_name,
+          studentId: pm.student_id,
+          studentName: pm.student_name,
+          grade: pm.grade,
+          mode: pm.mode,
+          amount: Number(pm.amount) || 0,
+          items
+        };
+      });
+
+      const prevUsers = (DB.state && Array.isArray(DB.state.users)) ? DB.state.users : [];
+      const prevByName = {};
+      prevUsers.forEach(pu => { if (pu && pu.username) prevByName[String(pu.username).toLowerCase()] = pu; });
+      const users = usrRows.map(u => {
+        let salt = u.salt || '';
+        let hash = u.hash || '';
+        const ph = u.password_hash || u.passwordHash || '';
+        if ((!salt || !hash) && ph.indexOf(':') >= 0) {
+          const parts = ph.split(':');
+          salt = parts[0];
+          hash = parts[1];
         }
-        if (repObj) {
-          reportMap[rep.student_id] = repObj;
+        let pages = undefined;
+        if (u.pages_json) {
+          try { pages = typeof u.pages_json === 'string' ? JSON.parse(u.pages_json) : u.pages_json; } catch(e) {}
         }
-      } catch (e) {}
-    }
+        let grades = undefined;
+        if (u.grades_json) {
+          try { grades = typeof u.grades_json === 'string' ? JSON.parse(u.grades_json) : u.grades_json; } catch(e) {}
+        }
 
-    const students = stRows.map(s => ({
-      id: s.id,
-      name: s.name,
-      grade: s.grade,
-      classTeacher: s.class_teacher,
-      gender: s.gender,
-      dob: s.dob,
-      age: s.age,
-      prevSchool: s.prev_school || s.prevSchool || '',
-      father: s.father,
-      mother: s.mother,
-      contact: s.contact,
-      religion: s.religion,
-      location: s.location,
-      dropLocation: s.drop_location,
-      transportType: s.transport_type,
-      vehicle: s.vehicle,
-      status: s.status,
-      discount: Number(s.discount) || 0,
-      admission: s.admission,
-      sportsActivity: s.sports_activity,
-      photo: s.photo || '',
-      fees: feesMap[s.id] || {},
-      transport: transportMap[s.id] || undefined,
-      subs: subFeesMap[s.id] || undefined,
-      report: reportMap[s.id] || undefined
-    }));
+        const prev = prevByName[String(u.username).toLowerCase()] || {};
+        if (!pages && Array.isArray(prev.pages)) pages = prev.pages.slice();
+        if (!grades && Array.isArray(prev.grades)) grades = prev.grades.slice();
 
-    const [pmRows] = await p.query('SELECT * FROM payments');
-    const payments = pmRows.map(pm => {
-      let items = [];
-      try { items = typeof pm.items_json === 'string' ? JSON.parse(pm.items_json) : (pm.items_json || []); } catch (e) {}
-      return {
-        id: pm.receipt_no,
-        receiptNo: pm.receipt_no,
-        date: pm.date,
-        businessName: pm.business_name,
-        studentId: pm.student_id,
-        studentName: pm.student_name,
-        grade: pm.grade,
-        mode: pm.mode,
-        amount: Number(pm.amount) || 0,
-        items
-      };
-    });
+        const obj = {
+          username: u.username,
+          name: u.name,
+          role: u.role,
+          salt,
+          hash,
+          passwordHash: ph
+        };
+        if (Array.isArray(pages)) obj.pages = pages;
+        if (Array.isArray(grades)) obj.grades = grades;
+        if (prev.mustChange !== undefined) obj.mustChange = prev.mustChange;
+        if (prev.pwCustom !== undefined) obj.pwCustom = prev.pwCustom;
+        if (prev.updatedAt) obj.updatedAt = prev.updatedAt;
+        return obj;
+      });
 
-    const [usrRows] = await p.query('SELECT * FROM users');
-    const prevUsers = (DB.state && Array.isArray(DB.state.users)) ? DB.state.users : [];
-    const prevByName = {};
-    prevUsers.forEach(pu => { if (pu && pu.username) prevByName[String(pu.username).toLowerCase()] = pu; });
-    const users = usrRows.map(u => {
-      let salt = u.salt || '';
-      let hash = u.hash || '';
-      const ph = u.password_hash || u.passwordHash || '';
-      if ((!salt || !hash) && ph.indexOf(':') >= 0) {
-        const parts = ph.split(':');
-        salt = parts[0];
-        hash = parts[1];
-      }
-      let pages = undefined;
-      if (u.pages_json) {
-        try { pages = typeof u.pages_json === 'string' ? JSON.parse(u.pages_json) : u.pages_json; } catch(e) {}
-      }
-      let grades = undefined;
-      if (u.grades_json) {
-        try { grades = typeof u.grades_json === 'string' ? JSON.parse(u.grades_json) : u.grades_json; } catch(e) {}
+      const feeHeads = fhRows.map(fh => ({
+        key: fh.head_key,
+        label: fh.label,
+        business: fh.business
+      }));
+
+      const settingsMap = {};
+      for (const set of setRows) {
+        try {
+          settingsMap[set.setting_key] = typeof set.setting_value === 'string' ? JSON.parse(set.setting_value) : set.setting_value;
+        } catch (e) {
+          settingsMap[set.setting_key] = set.setting_value;
+        }
       }
 
-      const prev = prevByName[String(u.username).toLowerCase()] || {};
-      if (!pages && Array.isArray(prev.pages)) pages = prev.pages.slice();
-      if (!grades && Array.isArray(prev.grades)) grades = prev.grades.slice();
-
-      const obj = {
-        username: u.username,
-        name: u.name,
-        role: u.role,
-        salt,
-        hash,
-        passwordHash: ph
-      };
-      if (Array.isArray(pages)) obj.pages = pages;
-      if (Array.isArray(grades)) obj.grades = grades;
-      if (prev.mustChange !== undefined) obj.mustChange = prev.mustChange;
-      if (prev.pwCustom !== undefined) obj.pwCustom = prev.pwCustom;
-      if (prev.updatedAt) obj.updatedAt = prev.updatedAt;
-      return obj;
-    });
-
-    const [fhRows] = await p.query('SELECT * FROM fee_heads');
-    const feeHeads = fhRows.map(fh => ({
-      key: fh.head_key,
-      label: fh.label,
-      business: fh.business
-    }));
-
-    const settingsMap = {};
-    for (const set of setRows) {
-      try {
-        settingsMap[set.setting_key] = typeof set.setting_value === 'string' ? JSON.parse(set.setting_value) : set.setting_value;
-      } catch (e) {
-        settingsMap[set.setting_key] = set.setting_value;
+      const attendanceMap = {};
+      for (const att of attRows) {
+        if (!attendanceMap[att.date]) attendanceMap[att.date] = {};
+        attendanceMap[att.date][att.student_id] = att.status;
       }
-    }
 
-    const attendanceMap = {};
-    for (const att of attRows) {
-      if (!attendanceMap[att.date]) attendanceMap[att.date] = {};
-      attendanceMap[att.date][att.student_id] = att.status;
-    }
+      const meta = Object.assign({}, DB.state.meta || {}, settingsMap);
+      if (feeHeads.length > 0) meta.feeHeads = feeHeads;
+      if (Object.keys(attendanceMap).length > 0) meta.attendance = attendanceMap;
 
-    const meta = Object.assign({}, DB.state.meta || {}, settingsMap);
-    if (feeHeads.length > 0) meta.feeHeads = feeHeads;
-    if (Object.keys(attendanceMap).length > 0) meta.attendance = attendanceMap;
-
-    if (students.length > 0 || payments.length > 0) {
-      lastMySqlLoadAt = Date.now();
-      DB.state = {
-        students,
-        payments,
-        users: users.length > 0 ? users : DB.state.users,
-        meta
-      };
-      return true;
+      if (students.length > 0 || payments.length > 0) {
+        lastMySqlLoadAt = Date.now();
+        DB.state = {
+          students,
+          payments,
+          users: users.length > 0 ? users : DB.state.users,
+          meta
+        };
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.warn('[MySQL Load Warn]', err.message);
+      return false;
+    } finally {
+      mysqlLoadPromise = null;
     }
-  } catch (err) {
-    console.warn('[MySQL Load Warn]', err.message);
-  }
-  return false;
+  })();
+  return mysqlLoadPromise;
 }
 
 function getActor(req, body) {
