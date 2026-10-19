@@ -61,7 +61,7 @@ sudo mysql -e "ALTER USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';" 
 sudo mysql -e "ALTER USER '${DB_USER}'@'127.0.0.1' IDENTIFIED BY '${DB_PASS}';" 2>/dev/null || true
 sudo mysql -e "GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';" 2>/dev/null || true
 sudo mysql -e "GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'127.0.0.1';" 2>/dev/null || true
-sudo mysql -e "FLUSH PRIVILEGES;"
+sudo mysql -e "FLUSH PRIVILEGES;" 2>/dev/null || true
 
 # 3. Environment configuration (Quotes around DB_PASSWORD for special characters like #)
 echo "[3/7] Configuring .env file..."
@@ -127,8 +127,10 @@ if [ -d "/etc/apache2/conf.d/userdata" ] || [ -d "/etc/httpd/conf.d" ]; then
     ProxyPreserveHost On
     ProxyPass / http://127.0.0.1:${PORT}/
     ProxyPassReverse / http://127.0.0.1:${PORT}/
-    RequestHeader set X-Forwarded-Proto "https"
-    RequestHeader set X-Forwarded-Port "443"
+    <IfModule mod_headers.c>
+        RequestHeader set X-Forwarded-Proto "https"
+        RequestHeader set X-Forwarded-Port "443"
+    </IfModule>
 </IfModule>
 EOF
 
@@ -141,6 +143,11 @@ EOF
         sudo rebuildhttpdconf 2>/dev/null || true
         sudo systemctl restart httpd 2>/dev/null || true
     fi
+fi
+
+# Ensure correct file permissions for cPanel user if script was executed by root
+if id "${CPANEL_USER}" &>/dev/null; then
+    sudo chown -R ${CPANEL_USER}:${CPANEL_USER} "${APP_DIR}" 2>/dev/null || true
 fi
 
 echo "======================================================================"
