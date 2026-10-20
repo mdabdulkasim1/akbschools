@@ -517,12 +517,12 @@ async function saveDBToMySQL(state, actor) {
         );
 
         if (Array.isArray(pm.items)) {
+          await p.query('DELETE FROM payment_items WHERE receipt_no = ?', [receiptNo]).catch(() => {});
           for (const item of pm.items) {
             await p.query(
-              `INSERT INTO payment_items (receipt_no, head_key, head_label, business_name, amount, created_by, updated_by, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
-               ON DUPLICATE KEY UPDATE head_label=VALUES(head_label), amount=VALUES(amount), updated_by=VALUES(updated_by), updated_at=NOW()`,
-              [receiptNo, item.headKey || item.key || item.head || '', item.label || '', pm.businessName || '', Number(item.amount) || 0, pmActor, pmActor]
+              `INSERT INTO payment_items (receipt_no, head_key, head_label, business_name, amount, created_at)
+               VALUES (?, ?, ?, ?, ?, NOW())`,
+              [receiptNo, item.headKey || item.key || item.head || '', item.label || '', pm.businessName || '', Number(item.amount) || 0]
             ).catch(() => {});
           }
         }
@@ -1061,9 +1061,10 @@ const server = http.createServer(async (req, res) => {
         if (hasMySQL()) {
           const p = getPool();
           if (p) {
-            saveStudentInMySQL(p, s, DB.state ? DB.state.meta : null, actor).catch(err => console.warn('[Direct Student MySQL Update Warn]', err.message));
+            await saveStudentInMySQL(p, s, DB.state ? DB.state.meta : null, actor).catch(err => console.warn('[Direct Student MySQL Update Warn]', err.message));
           }
         }
+        lastMySqlLoadAt = 0;
       }
       return sendJSON(res, 200, { ok: true, version: DB.version });
     }
@@ -1083,19 +1084,60 @@ const server = http.createServer(async (req, res) => {
           const p = getPool();
           if (p) {
             await p.query('DELETE FROM student_fees WHERE student_id = ?', [id]).catch(() => {});
+            await p.query('DELETE FROM student_transport_monthly WHERE student_id = ?', [id]).catch(() => {});
+            await p.query('DELETE FROM student_sub_fees WHERE student_id = ?', [id]).catch(() => {});
             await p.query('DELETE FROM students WHERE id = ?', [id]).catch(err => console.warn('[Direct Student MySQL Delete Warn]', err.message));
           }
         }
+        lastMySqlLoadAt = 0;
       }
       return sendJSON(res, 200, { ok: true, version: DB.version });
     }
     if (url.startsWith('/api/payments/') && req.method === 'DELETE') {
       const id = decodeURIComponent(url.slice('/api/payments/'.length));
-      const actor = getActor(req);
+      let body = {};
+      try {
+        const rawBody = await readBody(req);
+        if (rawBody) body = JSON.parse(rawBody);
+      } catch (e) {}
+      const actor = getActor(req, body);
       if (id) {
+        let deletedPayment = null;
         if (Array.isArray(DB.state.payments)) {
           const idx = DB.state.payments.findIndex(x => (x.id === id || x.receiptNo === id));
-          if (idx >= 0) DB.state.payments.splice(idx, 1);
+          if (idx >= 0) {
+            deletedPayment = DB.state.payments[idx];
+            DB.state.payments.splice(idx, 1);
+          }
+        }
+        let studentToSave = body.student;
+        if (!studentToSave && deletedPayment && deletedPayment.studentId && Array.isArray(DB.state.students)) {
+          const st = DB.state.students.find(s => s && String(s.id) === String(deletedPayment.studentId));
+          if (st) {
+            (deletedPayment.items || []).forEach(it => {
+              const head = it.head || it.headKey;
+              if (head === 'transport' && it.month && st.transport && st.transport[it.month]) {
+                st.transport[it.month].paid = Math.max(0, (Number(st.transport[it.month].paid) || 0) - (Number(it.amount) || 0));
+                st.transport[it.month].balance = (Number(st.transport[it.month].total) || 0) - st.transport[it.month].paid;
+              } else if (st.subs && st.subs[head] && it.sub && st.subs[head][it.sub]) {
+                st.subs[head][it.sub].paid = Math.max(0, (Number(st.subs[head][it.sub].paid) || 0) - (Number(it.amount) || 0));
+                st.subs[head][it.sub].balance = (Number(st.subs[head][it.sub].total) || 0) - st.subs[head][it.sub].paid;
+              } else if (st.fees && st.fees[head]) {
+                st.fees[head].paid = Math.max(0, (Number(st.fees[head].paid) || 0) - (Number(it.amount) || 0));
+                st.fees[head].balance = (Number(st.fees[head].total) || 0) - st.fees[head].paid;
+              }
+            });
+            studentToSave = st;
+          }
+        } else if (studentToSave && studentToSave.id) {
+          if (Array.isArray(DB.state.students)) {
+            const sIdx = DB.state.students.findIndex(s => s && String(s.id) === String(studentToSave.id));
+            if (sIdx >= 0) DB.state.students[sIdx] = studentToSave;
+          }
+        }
+        if (body.meta && typeof body.meta === 'object') {
+          if (!DB.state.meta) DB.state.meta = {};
+          Object.assign(DB.state.meta, body.meta);
         }
         DB.version++;
         await saveDB();
@@ -1106,8 +1148,12 @@ const server = http.createServer(async (req, res) => {
           if (p) {
             await p.query('DELETE FROM payment_items WHERE receipt_no = ?', [id]).catch(() => {});
             await p.query('DELETE FROM payments WHERE receipt_no = ?', [id]).catch(err => console.warn('[Direct Payment MySQL Delete Warn]', err.message));
+            if (studentToSave) {
+              await saveStudentInMySQL(p, studentToSave, DB.state ? DB.state.meta : null, actor);
+            }
           }
         }
+        lastMySqlLoadAt = 0;
       }
       return sendJSON(res, 200, { ok: true, version: DB.version });
     }
@@ -1125,8 +1171,12 @@ const server = http.createServer(async (req, res) => {
       if (body.student && body.student.id) {
         const s = body.student;
         if (!Array.isArray(DB.state.students)) DB.state.students = [];
-        const idx = DB.state.students.findIndex(x => x.id === s.id);
-        if (idx >= 0) DB.state.students[idx] = s;
+        const idx = DB.state.students.findIndex(x => x && String(x.id) === String(s.id));
+        if (idx >= 0) DB.state.students[idx] = s; else DB.state.students.push(s);
+      }
+      if (body.meta && typeof body.meta === 'object') {
+        if (!DB.state.meta) DB.state.meta = {};
+        Object.assign(DB.state.meta, body.meta);
       }
       DB.version++;
       await saveDB();
@@ -1147,18 +1197,36 @@ const server = http.createServer(async (req, res) => {
             ).catch(err => console.warn('[Direct Payment MySQL Insert Warn]', err.message));
 
             if (Array.isArray(rec.items)) {
+              await p.query('DELETE FROM payment_items WHERE receipt_no = ?', [rec.receiptNo]).catch(() => {});
               for (const item of rec.items) {
                 await p.query(
-                  `INSERT INTO payment_items (receipt_no, head_key, head_label, business_name, amount, created_by, updated_by, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
-                   ON DUPLICATE KEY UPDATE head_label=VALUES(head_label), amount=VALUES(amount), updated_by=VALUES(updated_by), updated_at=NOW()`,
-                  [rec.receiptNo, item.head || item.headKey || '', item.label || '', rec.businessName || '', Number(item.amount) || 0, actor, actor]
+                  `INSERT INTO payment_items (receipt_no, head_key, head_label, business_name, amount, created_at)
+                   VALUES (?, ?, ?, ?, ?, NOW())`,
+                  [rec.receiptNo, item.head || item.headKey || '', item.label || '', rec.businessName || '', Number(item.amount) || 0]
+                ).catch(() => {});
+              }
+            }
+          }
+
+          if (body.student && body.student.id) {
+            await saveStudentInMySQL(p, body.student, DB.state ? DB.state.meta : null, actor);
+          }
+
+          if (body.meta && (body.meta.seqByBiz || body.meta.receiptSeq)) {
+            for (const k of ['seqByBiz', 'receiptSeq']) {
+              if (body.meta[k] !== undefined) {
+                await p.query(
+                  `INSERT INTO app_settings (setting_key, setting_value, created_by, updated_by, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, NOW(), NOW())
+                   ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value), updated_by=VALUES(updated_by), updated_at=NOW()`,
+                  [k, JSON.stringify(body.meta[k]), actor, actor]
                 ).catch(() => {});
               }
             }
           }
         }
       }
+      lastMySqlLoadAt = 0;
       return sendJSON(res, 200, { ok: true, version: DB.version });
     }
     if (url.startsWith('/api/users') && (req.method === 'POST' || req.method === 'PUT')) {

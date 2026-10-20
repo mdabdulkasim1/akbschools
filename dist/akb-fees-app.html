@@ -353,6 +353,33 @@ tr.row-absent{background:var(--red-l)}
   display: inline-block;
   animation: spinnerRotate 0.6s linear infinite;
 }
+.spinner-md {
+  width: 38px;
+  height: 38px;
+  border: 3px solid rgba(29, 78, 216, 0.18);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  display: inline-block;
+  animation: spinnerRotate 0.7s linear infinite;
+}
+.view-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 360px;
+  gap: 16px;
+  padding: 40px 20px;
+}
+.view-loader-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.view-loader-sub {
+  font-size: 13px;
+  color: var(--muted);
+}
 @keyframes spinnerRotate {
   to { transform: rotate(360deg); }
 }
@@ -594,22 +621,31 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
   // Global API fetch loader interceptor
   let activeApiRequests = 0;
   const origFetch = w.fetch;
-  function setLoaderState(loading) {
+  function setLoaderState(loading, isWrite) {
     const pBar = document.getElementById('globalProgressBar');
     const badge = document.getElementById('globalLoaderBadge');
     if (pBar) pBar.classList.toggle('loading', loading);
-    if (badge) badge.classList.toggle('visible', loading);
+    if (badge) {
+      badge.classList.toggle('visible', loading);
+      const textSpan = badge.querySelector('span:last-child');
+      if (textSpan) {
+        textSpan.textContent = isWrite ? 'Saving…' : 'Loading…';
+      }
+    }
   }
 
   if (origFetch) {
     w.fetch = function () {
       const firstArg = arguments[0];
+      const secondArg = arguments[1];
       const url = typeof firstArg === 'string' ? firstArg : (firstArg && firstArg.url ? firstArg.url : '');
       const isApi = url.indexOf('/api/') !== -1 || url.indexOf('api/') !== -1;
+      const method = (secondArg && secondArg.method) || (typeof firstArg === 'object' && firstArg.method) || 'GET';
+      const isWrite = method.toUpperCase() === 'POST' || method.toUpperCase() === 'PUT' || method.toUpperCase() === 'DELETE';
 
       if (isApi) {
         activeApiRequests++;
-        setLoaderState(true);
+        setLoaderState(true, isWrite);
       }
 
       return origFetch.apply(this, arguments)
@@ -617,7 +653,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
           if (isApi) {
             activeApiRequests = Math.max(0, activeApiRequests - 1);
             if (activeApiRequests === 0) {
-              setLoaderState(false);
+              setLoaderState(false, false);
             }
           }
         });
@@ -923,7 +959,6 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       }
       await this.load();
       if (!this.users.length) await this.seedUsers();
-      if (!this.students.length) await this.seed();
 
       if (!Array.isArray(this.meta.feeHeads) || !this.meta.feeHeads.length) {
         this.meta.feeHeads = DEFAULT_FEE_HEADS.map(h => Object.assign({}, h));
@@ -1315,8 +1350,9 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
           await fetch('/api/payments', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ records, student })
+            body: JSON.stringify({ records, student, meta: this.meta })
           });
+          if (w.Router && w.Router.invalidateCache) w.Router.invalidateCache();
         } catch (e) {}
         await this.persist();
         return records;
@@ -1349,7 +1385,12 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       this.payments.splice(idx, 1);
       if (serverMode) {
         try {
-          await fetch('/api/payments/' + encodeURIComponent(rec.receiptNo || rec.id), { method: 'DELETE' });
+          await fetch('/api/payments/' + encodeURIComponent(rec.receiptNo || rec.id), {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ student, meta: this.meta })
+          });
+          if (w.Router && w.Router.invalidateCache) w.Router.invalidateCache();
         } catch (e) {}
         await this.persist();
         return;
@@ -1498,6 +1539,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(s)
           });
+          if (w.Router && w.Router.invalidateCache) w.Router.invalidateCache('students');
         } catch (e) {}
         await this.persist();
         return;
@@ -1517,6 +1559,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       if (serverMode) {
         try {
           await fetch('/api/students/' + encodeURIComponent(id), { method: 'DELETE' });
+          if (w.Router && w.Router.invalidateCache) w.Router.invalidateCache();
         } catch (e) {}
         await this.persist();
         return;
@@ -4953,42 +4996,87 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     return Store.canAccess(pageOf(name));
   }
 
+  const _lastFetched = {};
+  function fetchIfStale(key, fn, maxAgeMs = 15000) {
+    const now = Date.now();
+    if (_lastFetched[key] && now - _lastFetched[key] < maxAgeMs) return Promise.resolve();
+    return fn().then(() => { _lastFetched[key] = Date.now(); }).catch(() => {});
+  }
+  Router.invalidateCache = function (key) {
+    if (key) delete _lastFetched[key];
+    else for (const k of Object.keys(_lastFetched)) delete _lastFetched[k];
+  };
+
   async function ensureModuleData(name) {
     const page = pageOf(name);
+    const promises = [];
     switch (page) {
       case 'dashboard':
-        await Promise.all([Store.fetchSettings(), Store.fetchFeeHeads(), Store.fetchStudents(), Store.fetchPayments()]);
+        promises.push(
+          fetchIfStale('settings', () => Store.fetchSettings()),
+          fetchIfStale('feeHeads', () => Store.fetchFeeHeads()),
+          fetchIfStale('students', () => Store.fetchStudents()),
+          fetchIfStale('payments', () => Store.fetchPayments())
+        );
         break;
       case 'students':
       case 'student':
-        await Promise.all([Store.fetchSettings(), Store.fetchFeeHeads(), Store.fetchStudents()]);
+        promises.push(
+          fetchIfStale('settings', () => Store.fetchSettings()),
+          fetchIfStale('feeHeads', () => Store.fetchFeeHeads()),
+          fetchIfStale('students', () => Store.fetchStudents())
+        );
         break;
       case 'collect':
       case 'collections':
-        await Promise.all([Store.fetchSettings(), Store.fetchFeeHeads(), Store.fetchStudents(), Store.fetchPayments()]);
+        promises.push(
+          fetchIfStale('settings', () => Store.fetchSettings()),
+          fetchIfStale('feeHeads', () => Store.fetchFeeHeads()),
+          fetchIfStale('students', () => Store.fetchStudents()),
+          fetchIfStale('payments', () => Store.fetchPayments())
+        );
         break;
       case 'reports':
       case 'business':
-        await Promise.all([Store.fetchSettings(), Store.fetchFeeHeads(), Store.fetchStudents(), Store.fetchPayments()]);
+        promises.push(
+          fetchIfStale('settings', () => Store.fetchSettings()),
+          fetchIfStale('feeHeads', () => Store.fetchFeeHeads()),
+          fetchIfStale('students', () => Store.fetchStudents()),
+          fetchIfStale('payments', () => Store.fetchPayments())
+        );
         break;
       case 'attendance':
       case 'attreport':
-        await Promise.all([Store.fetchStudents(), Store.fetchAttendance(), Store.fetchHolidays()]);
+        promises.push(
+          fetchIfStale('students', () => Store.fetchStudents()),
+          fetchIfStale('attendance', () => Store.fetchAttendance()),
+          fetchIfStale('holidays', () => Store.fetchHolidays())
+        );
         break;
       case 'marks':
       case 'academics':
-        await Promise.all([Store.fetchStudents(), Store.fetchSettings()]);
+        promises.push(
+          fetchIfStale('students', () => Store.fetchStudents()),
+          fetchIfStale('settings', () => Store.fetchSettings())
+        );
         break;
       case 'users':
-        await Store.fetchUsers();
+        promises.push(fetchIfStale('users', () => Store.fetchUsers()));
         break;
       case 'data':
       case 'audit':
-        await Promise.all([Store.fetchSettings(), Store.fetchFeeHeads()]);
+        promises.push(
+          fetchIfStale('settings', () => Store.fetchSettings()),
+          fetchIfStale('feeHeads', () => Store.fetchFeeHeads())
+        );
         break;
       default:
-        await Promise.all([Store.fetchSettings(), Store.fetchFeeHeads()]);
+        promises.push(
+          fetchIfStale('settings', () => Store.fetchSettings()),
+          fetchIfStale('feeHeads', () => Store.fetchFeeHeads())
+        );
     }
+    await Promise.all(promises);
   }
 
   async function route() {
@@ -5001,7 +5089,18 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
       if (location.hash.replace(/^#\/?/, '').split('/')[0] !== land) { location.hash = '#/' + land; return; }
     }
     try {
-      // Fetch only the data required for this module on-demand when entering the route
+      const viewEl = document.getElementById('view');
+      const hasInitialData = Store.students && Store.students.length > 0;
+      if (viewEl && (!hasInitialData || !viewEl.children.length)) {
+        const title = name ? (name.charAt(0).toUpperCase() + name.slice(1)) : 'App';
+        viewEl.innerHTML = `
+          <div class="view-loader">
+            <div class="spinner-md"></div>
+            <div class="view-loader-title">Loading ${U.esc(title)}…</div>
+            <div class="view-loader-sub">Fetching latest data from server</div>
+          </div>`;
+      }
+      setActive(pageOf(name));
       await ensureModuleData(name);
 
       switch (name) {

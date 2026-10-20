@@ -683,8 +683,9 @@
           await fetch('/api/payments', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ records, student })
+            body: JSON.stringify({ records, student, meta: this.meta })
           });
+          if (w.Router && w.Router.invalidateCache) w.Router.invalidateCache();
         } catch (e) {}
         await this.persist();
         return records;
@@ -717,7 +718,12 @@
       this.payments.splice(idx, 1);
       if (serverMode) {
         try {
-          await fetch('/api/payments/' + encodeURIComponent(rec.receiptNo || rec.id), { method: 'DELETE' });
+          await fetch('/api/payments/' + encodeURIComponent(rec.receiptNo || rec.id), {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ student, meta: this.meta })
+          });
+          if (w.Router && w.Router.invalidateCache) w.Router.invalidateCache();
         } catch (e) {}
         await this.persist();
         return;
@@ -866,6 +872,7 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(s)
           });
+          if (w.Router && w.Router.invalidateCache) w.Router.invalidateCache('students');
         } catch (e) {}
         await this.persist();
         return;
@@ -885,6 +892,7 @@
       if (serverMode) {
         try {
           await fetch('/api/students/' + encodeURIComponent(id), { method: 'DELETE' });
+          if (w.Router && w.Router.invalidateCache) w.Router.invalidateCache();
         } catch (e) {}
         await this.persist();
         return;
