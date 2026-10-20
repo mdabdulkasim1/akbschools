@@ -212,6 +212,7 @@
           const list = await r.json();
           if (Array.isArray(list) && list.length > 0) {
             this.students = list;
+            this.ensureStudentHeads();
             this.recomputeAll();
             serverMode = true;
             return true;
@@ -225,8 +226,9 @@
         const r = await fetch('/api/payments', { cache: 'no-store' });
         if (r.ok) {
           const list = await r.json();
-          if (Array.isArray(list) && list.length > 0) {
+          if (Array.isArray(list)) {
             this.payments = list;
+            this._mirrorLocal();
             serverMode = true;
             return true;
           }
@@ -359,17 +361,25 @@
     },
     // best-effort background copy of the shared state into this browser's IndexedDB
     _mirrorLocal() {
-      if (!useIDB) return;
-      Promise.resolve().then(async () => {
+      if (useIDB) {
+        Promise.resolve().then(async () => {
+          try {
+            if (!db) { db = await openDB().catch(() => null); }
+            if (!db) return;
+            await idbClear('students'); await idbPutMany('students', this.students);
+            await idbClear('payments'); await idbPutMany('payments', this.payments);
+            await idbClear('users'); await idbPutMany('users', this.users);
+            await idbPut('meta', { id: 'meta', value: this.meta });
+          } catch (e) { /* mirror is best-effort */ }
+        });
+      } else {
         try {
-          if (!db) { db = await openDB().catch(() => null); }
-          if (!db) return;
-          await idbClear('students'); await idbPutMany('students', this.students);
-          await idbClear('payments'); await idbPutMany('payments', this.payments);
-          await idbClear('users'); await idbPutMany('users', this.users);
-          await idbPut('meta', { id: 'meta', value: this.meta });
-        } catch (e) { /* mirror is best-effort */ }
-      });
+          LS.setItem('akb_students', JSON.stringify(this.students));
+          LS.setItem('akb_payments', JSON.stringify(this.payments));
+          LS.setItem('akb_users', JSON.stringify(this.users));
+          LS.setItem('akb_meta', JSON.stringify(this.meta));
+        } catch (e) {}
+      }
     },
     _scheduleSync() { dirty = true; },
     async _syncNow() {},
@@ -465,11 +475,16 @@
     },
 
     recompute(s) {
+      if (!s) return;
+      s.fees = s.fees || {};
+      HEAD_ORDER.forEach(k => {
+        if (!s.fees[k]) s.fees[k] = { label: HEAD_LABELS[k] || k, total: 0, paid: 0, balance: 0 };
+      });
       // Transport head is the roll-up of its 12 monthly amounts.
       if (HEAD_ORDER.indexOf(TRANSPORT_HEAD) >= 0) {
         this.ensureTransport(s);
         let t = 0, p = 0;
-        this.transportMonths().forEach(mm => { const c = s.transport[mm.key] || {}; t += Number(c.total) || 0; p += Number(c.paid) || 0; });
+        this.transportMonths().forEach(mm => { const c = (s.transport && s.transport[mm.key]) || {}; t += Number(c.total) || 0; p += Number(c.paid) || 0; });
         if (s.fees[TRANSPORT_HEAD]) { s.fees[TRANSPORT_HEAD].total = t; s.fees[TRANSPORT_HEAD].paid = p; }
       }
       // Event & Extra-Curricular heads roll up from their named sub-items.

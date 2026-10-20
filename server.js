@@ -187,6 +187,16 @@ async function loadDBFromMySQL(force) {
         } catch (e) {}
       }
 
+      const defaultFees = {};
+      for (const fh of fhRows) {
+        defaultFees[fh.head_key] = {
+          label: fh.label || fh.head_key,
+          total: 0,
+          paid: 0,
+          balance: 0
+        };
+      }
+
       const students = stRows.map(s => ({
         id: s.id,
         name: s.name,
@@ -209,7 +219,7 @@ async function loadDBFromMySQL(force) {
         admission: s.admission,
         sportsActivity: s.sports_activity,
         photo: s.photo || '',
-        fees: feesMap[s.id] || {},
+        fees: Object.assign({}, defaultFees, feesMap[s.id] || {}),
         transport: transportMap[s.id] || undefined,
         subs: subFeesMap[s.id] || undefined,
         report: reportMap[s.id] || undefined
@@ -298,7 +308,7 @@ async function loadDBFromMySQL(force) {
       if (feeHeads.length > 0) meta.feeHeads = feeHeads;
       if (Object.keys(attendanceMap).length > 0) meta.attendance = attendanceMap;
 
-      if (students.length > 0 || payments.length > 0) {
+      if (Array.isArray(stRows)) {
         lastMySqlLoadAt = Date.now();
         DB.state = {
           students,

@@ -879,6 +879,7 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
           const list = await r.json();
           if (Array.isArray(list) && list.length > 0) {
             this.students = list;
+            this.ensureStudentHeads();
             this.recomputeAll();
             serverMode = true;
             return true;
@@ -892,8 +893,9 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
         const r = await fetch('/api/payments', { cache: 'no-store' });
         if (r.ok) {
           const list = await r.json();
-          if (Array.isArray(list) && list.length > 0) {
+          if (Array.isArray(list)) {
             this.payments = list;
+            this._mirrorLocal();
             serverMode = true;
             return true;
           }
@@ -1026,17 +1028,25 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     },
     // best-effort background copy of the shared state into this browser's IndexedDB
     _mirrorLocal() {
-      if (!useIDB) return;
-      Promise.resolve().then(async () => {
+      if (useIDB) {
+        Promise.resolve().then(async () => {
+          try {
+            if (!db) { db = await openDB().catch(() => null); }
+            if (!db) return;
+            await idbClear('students'); await idbPutMany('students', this.students);
+            await idbClear('payments'); await idbPutMany('payments', this.payments);
+            await idbClear('users'); await idbPutMany('users', this.users);
+            await idbPut('meta', { id: 'meta', value: this.meta });
+          } catch (e) { /* mirror is best-effort */ }
+        });
+      } else {
         try {
-          if (!db) { db = await openDB().catch(() => null); }
-          if (!db) return;
-          await idbClear('students'); await idbPutMany('students', this.students);
-          await idbClear('payments'); await idbPutMany('payments', this.payments);
-          await idbClear('users'); await idbPutMany('users', this.users);
-          await idbPut('meta', { id: 'meta', value: this.meta });
-        } catch (e) { /* mirror is best-effort */ }
-      });
+          LS.setItem('akb_students', JSON.stringify(this.students));
+          LS.setItem('akb_payments', JSON.stringify(this.payments));
+          LS.setItem('akb_users', JSON.stringify(this.users));
+          LS.setItem('akb_meta', JSON.stringify(this.meta));
+        } catch (e) {}
+      }
     },
     _scheduleSync() { dirty = true; },
     async _syncNow() {},
@@ -1132,11 +1142,16 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     },
 
     recompute(s) {
+      if (!s) return;
+      s.fees = s.fees || {};
+      HEAD_ORDER.forEach(k => {
+        if (!s.fees[k]) s.fees[k] = { label: HEAD_LABELS[k] || k, total: 0, paid: 0, balance: 0 };
+      });
       // Transport head is the roll-up of its 12 monthly amounts.
       if (HEAD_ORDER.indexOf(TRANSPORT_HEAD) >= 0) {
         this.ensureTransport(s);
         let t = 0, p = 0;
-        this.transportMonths().forEach(mm => { const c = s.transport[mm.key] || {}; t += Number(c.total) || 0; p += Number(c.paid) || 0; });
+        this.transportMonths().forEach(mm => { const c = (s.transport && s.transport[mm.key]) || {}; t += Number(c.total) || 0; p += Number(c.paid) || 0; });
         if (s.fees[TRANSPORT_HEAD]) { s.fees[TRANSPORT_HEAD].total = t; s.fees[TRANSPORT_HEAD].paid = p; }
       }
       // Event & Extra-Curricular heads roll up from their named sub-items.
@@ -2664,15 +2679,15 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
   function feeCategoryRows(s, withBusiness) {
     const isAct = Store.isStudentActive(s);
     return Store.HEAD_ORDER.map(k => {
-      const h = s.fees[k]; if (!h) return '';
+      const h = (s && s.fees && s.fees[k]) || { label: Store.HEAD_LABELS[k] || k, total: 0, paid: 0, balance: 0 };
       const balCell = isAct
-        ? `<td class="num" style="color:${h.balance > 0 ? 'var(--red)' : 'var(--muted)'};font-weight:600">${U.inr(h.balance)}</td>`
+        ? `<td class="num" style="color:${(Number(h.balance) || 0) > 0 ? 'var(--red)' : 'var(--muted)'};font-weight:600">${U.inr(h.balance || 0)}</td>`
         : `<td class="num" style="color:var(--muted);font-weight:600">₹0 <span class="muted" style="font-size:11px">(Disabled)</span></td>`;
       return `<tr>
         ${withBusiness ? `<td class="muted" style="font-size:12px">${U.esc(Store.BUSINESS[k] || '')}</td>` : ''}
-        <td><b>${U.esc(h.label)}</b></td>
-        <td class="num">${U.inr(h.total)}</td>
-        <td class="num" style="color:var(--green)">${U.inr(h.paid)}</td>
+        <td><b>${U.esc(h.label || Store.HEAD_LABELS[k] || k)}</b></td>
+        <td class="num">${U.inr(h.total || 0)}</td>
+        <td class="num" style="color:var(--green)">${U.inr(h.paid || 0)}</td>
         ${balCell}</tr>`;
     }).join('');
   }
@@ -2749,7 +2764,10 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
 
   // Grouped bar chart (Total vs Received) — pure inline SVG, no libraries
   function barChart(s) {
-    const items = Store.HEAD_ORDER.map(k => ({ label: Store.HEAD_LABELS[k], total: s.fees[k].total, recv: s.fees[k].paid }));
+    const items = Store.HEAD_ORDER.map(k => {
+      const h = (s && s.fees && s.fees[k]) || {};
+      return { label: Store.HEAD_LABELS[k] || k, total: Number(h.total) || 0, recv: Number(h.paid) || 0 };
+    });
     const max = Math.max(1, ...items.map(i => Math.max(i.total, i.recv)));
     const W = 720, H = 260, padL = 54, padB = 46, padT = 10, padR = 8;
     const cw = (W - padL - padR) / items.length;
@@ -3142,11 +3160,11 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
     const s = Store.getStudent(id); if (!s) return;
     const root = document.getElementById('modalRoot');
     const feeInputs = Store.HEAD_ORDER.filter(k => k !== 'transport' && Store.MULTI_HEADS.indexOf(k) < 0).map(k => {
-      const h = s.fees[k];
+      const h = (s && s.fees && s.fees[k]) || { label: Store.HEAD_LABELS[k] || k, total: 0, paid: 0, balance: 0 };
       return `<div class="fee-row" style="grid-template-columns:1.4fr 1fr 1fr">
         <div class="fh-label">${U.esc(h.label)}</div>
-        <input type="number" min="0" step="1" data-fee-total="${k}" value="${h.total}" title="Total"/>
-        <input type="number" min="0" step="1" data-fee-paid="${k}" value="${h.paid}" title="Paid"/>
+        <input type="number" min="0" step="1" data-fee-total="${k}" value="${h.total || 0}" title="Total"/>
+        <input type="number" min="0" step="1" data-fee-paid="${k}" value="${h.paid || 0}" title="Paid"/>
       </div>`;
     }).join('');
     // Transport is monthly — a 12-month grid (Apr → Mar)
@@ -3327,9 +3345,10 @@ window.__AKB_SEED__ = {"school": "AKB School of Excellence", "year": "2026-2027"
         }).join('');
         return `<div class="fee-group"><div class="fee-group-hd">${groupEmoji[k] || ''} ${U.esc(label)} <span class="muted">(pick the item to collect)</span> <button class="btn sm" data-addsub="${k}" style="margin-left:auto">＋ Add</button></div>${itemRows}</div>`;
       }
-      const h = s.fees[k]; const due = h.balance > 0;
-      const status = h.total > 0 ? `Paid ${U.inr(h.paid)} of ${U.inr(h.total)}` : 'Not applied — tick to add & collect';
-      return feeRowHtml({ key: k, head: k, month: '', label: h.label, sub: U.esc(B.name) + ' · ' + status, balance: h.balance, due });
+      const h = (s && s.fees && s.fees[k]) || { label: Store.HEAD_LABELS[k] || k, total: 0, paid: 0, balance: 0 };
+      const due = (Number(h.balance) || 0) > 0;
+      const status = (Number(h.total) || 0) > 0 ? `Paid ${U.inr(h.paid || 0)} of ${U.inr(h.total || 0)}` : 'Not applied — tick to add & collect';
+      return feeRowHtml({ key: k, head: k, month: '', label: h.label || Store.HEAD_LABELS[k] || k, sub: U.esc(B.name) + ' · ' + status, balance: h.balance || 0, due });
     }).join('');
     root.innerHTML = `
       <div class="modal-backdrop" id="payBackdrop"><div class="modal">

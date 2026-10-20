@@ -534,15 +534,15 @@
   function feeCategoryRows(s, withBusiness) {
     const isAct = Store.isStudentActive(s);
     return Store.HEAD_ORDER.map(k => {
-      const h = s.fees[k]; if (!h) return '';
+      const h = (s && s.fees && s.fees[k]) || { label: Store.HEAD_LABELS[k] || k, total: 0, paid: 0, balance: 0 };
       const balCell = isAct
-        ? `<td class="num" style="color:${h.balance > 0 ? 'var(--red)' : 'var(--muted)'};font-weight:600">${U.inr(h.balance)}</td>`
+        ? `<td class="num" style="color:${(Number(h.balance) || 0) > 0 ? 'var(--red)' : 'var(--muted)'};font-weight:600">${U.inr(h.balance || 0)}</td>`
         : `<td class="num" style="color:var(--muted);font-weight:600">₹0 <span class="muted" style="font-size:11px">(Disabled)</span></td>`;
       return `<tr>
         ${withBusiness ? `<td class="muted" style="font-size:12px">${U.esc(Store.BUSINESS[k] || '')}</td>` : ''}
-        <td><b>${U.esc(h.label)}</b></td>
-        <td class="num">${U.inr(h.total)}</td>
-        <td class="num" style="color:var(--green)">${U.inr(h.paid)}</td>
+        <td><b>${U.esc(h.label || Store.HEAD_LABELS[k] || k)}</b></td>
+        <td class="num">${U.inr(h.total || 0)}</td>
+        <td class="num" style="color:var(--green)">${U.inr(h.paid || 0)}</td>
         ${balCell}</tr>`;
     }).join('');
   }
@@ -619,7 +619,10 @@
 
   // Grouped bar chart (Total vs Received) — pure inline SVG, no libraries
   function barChart(s) {
-    const items = Store.HEAD_ORDER.map(k => ({ label: Store.HEAD_LABELS[k], total: s.fees[k].total, recv: s.fees[k].paid }));
+    const items = Store.HEAD_ORDER.map(k => {
+      const h = (s && s.fees && s.fees[k]) || {};
+      return { label: Store.HEAD_LABELS[k] || k, total: Number(h.total) || 0, recv: Number(h.paid) || 0 };
+    });
     const max = Math.max(1, ...items.map(i => Math.max(i.total, i.recv)));
     const W = 720, H = 260, padL = 54, padB = 46, padT = 10, padR = 8;
     const cw = (W - padL - padR) / items.length;
@@ -1012,11 +1015,11 @@
     const s = Store.getStudent(id); if (!s) return;
     const root = document.getElementById('modalRoot');
     const feeInputs = Store.HEAD_ORDER.filter(k => k !== 'transport' && Store.MULTI_HEADS.indexOf(k) < 0).map(k => {
-      const h = s.fees[k];
+      const h = (s && s.fees && s.fees[k]) || { label: Store.HEAD_LABELS[k] || k, total: 0, paid: 0, balance: 0 };
       return `<div class="fee-row" style="grid-template-columns:1.4fr 1fr 1fr">
         <div class="fh-label">${U.esc(h.label)}</div>
-        <input type="number" min="0" step="1" data-fee-total="${k}" value="${h.total}" title="Total"/>
-        <input type="number" min="0" step="1" data-fee-paid="${k}" value="${h.paid}" title="Paid"/>
+        <input type="number" min="0" step="1" data-fee-total="${k}" value="${h.total || 0}" title="Total"/>
+        <input type="number" min="0" step="1" data-fee-paid="${k}" value="${h.paid || 0}" title="Paid"/>
       </div>`;
     }).join('');
     // Transport is monthly — a 12-month grid (Apr → Mar)
@@ -1197,9 +1200,10 @@
         }).join('');
         return `<div class="fee-group"><div class="fee-group-hd">${groupEmoji[k] || ''} ${U.esc(label)} <span class="muted">(pick the item to collect)</span> <button class="btn sm" data-addsub="${k}" style="margin-left:auto">＋ Add</button></div>${itemRows}</div>`;
       }
-      const h = s.fees[k]; const due = h.balance > 0;
-      const status = h.total > 0 ? `Paid ${U.inr(h.paid)} of ${U.inr(h.total)}` : 'Not applied — tick to add & collect';
-      return feeRowHtml({ key: k, head: k, month: '', label: h.label, sub: U.esc(B.name) + ' · ' + status, balance: h.balance, due });
+      const h = (s && s.fees && s.fees[k]) || { label: Store.HEAD_LABELS[k] || k, total: 0, paid: 0, balance: 0 };
+      const due = (Number(h.balance) || 0) > 0;
+      const status = (Number(h.total) || 0) > 0 ? `Paid ${U.inr(h.paid || 0)} of ${U.inr(h.total || 0)}` : 'Not applied — tick to add & collect';
+      return feeRowHtml({ key: k, head: k, month: '', label: h.label || Store.HEAD_LABELS[k] || k, sub: U.esc(B.name) + ' · ' + status, balance: h.balance || 0, due });
     }).join('');
     root.innerHTML = `
       <div class="modal-backdrop" id="payBackdrop"><div class="modal">
